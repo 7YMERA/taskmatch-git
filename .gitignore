@@ -14,3 +14,4 @@ taskmatch-api/.env
 # misc
 .DS_Store
 *.log
+taskmatch-git/
