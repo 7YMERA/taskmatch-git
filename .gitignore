@@ -1,0 +1,16 @@
+# dependencies / build
+taskmatch/node_modules/
+taskmatch/.next/
+taskmatch/out/
+taskmatch-api/venv/
+taskmatch-api/__pycache__/
+**/__pycache__/
+
+# env / secrets
+taskmatch/.env.local
+taskmatch-api/.env
+.env
+
+# misc
+.DS_Store
+*.log

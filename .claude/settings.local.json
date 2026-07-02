@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//c/Users/eagle/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/e72728da-c015-4c1d-963f-6d4945b98ac4/e4f742cd-523d-425d-b7ff-f3bfcf653e9f/skills/docx/**)",
+      "Bash(extract-text \"C:\\\\Users\\\\eagle\\\\OneDrive - Universiti Teknologi PETRONAS\\\\FYP INTERIM REPORT 22001874.docx\")",
+      "Bash(pandoc \"C:\\\\Users\\\\eagle\\\\OneDrive - Universiti Teknologi PETRONAS\\\\FYP INTERIM REPORT 22001874.docx\" -t markdown)",
+      "Bash(python scripts/office/unpack.py \"C:\\\\Users\\\\eagle\\\\OneDrive - Universiti Teknologi PETRONAS\\\\FYP INTERIM REPORT 22001874.docx\" \"C:\\\\Users\\\\eagle\\\\TASKMATCH FYP PROJECT\\\\_report_unpacked\")"
+    ]
+  }
+}
