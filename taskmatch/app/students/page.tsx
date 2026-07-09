@@ -37,6 +37,9 @@ export default function Students() {
   const [editingStudent, setEditingStudent] = useState<string | null>(null)
   const [editSkills, setEditSkills] = useState<{ skill_id: string, proficiency: number }[]>([])
   const [form, setForm] = useState({ name: '', matric: '', programme: '', year: '', email: '', group_label: '' })
+  const [accounts, setAccounts] = useState<any[]>([])          // signup (login) accounts, from the admin API
+  const [addMode, setAddMode] = useState<'existing' | 'blank'>('existing')
+  const [pickedAccountId, setPickedAccountId] = useState('')
   const [selectedSkills, setSelectedSkills] = useState<{ skill_id: string, proficiency: number }[]>([])
   const [stats, setStats] = useState<{ [student_id: string]: any }>({})
   const [groupFilter, setGroupFilter] = useState('all')
@@ -50,12 +53,45 @@ export default function Students() {
       const role = session?.user?.user_metadata?.role || 'student'
       setUserRole(role)
       setUserEmail(session.user.email || '')
+      if (role === 'leader') fetchAccounts()   // account list + role controls are leader-only
     })
     fetchStudents()
     fetchSkills()
     fetchStats()
     fetchGroups()
   }, [])
+
+  // Bearer header for the leader-gated admin endpoints on the API.
+  const authHeader = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return session ? { Authorization: `Bearer ${session.access_token}` } : {}
+  }
+
+  const fetchAccounts = async () => {
+    try {
+      const headers = await authHeader()
+      const res = await axios.get(`${API}/accounts`, { headers })
+      setAccounts(res.data.accounts || [])
+    } catch {
+      // Not a leader, or the server has no admin key configured — the feature just stays hidden.
+    }
+  }
+
+  const changeRole = async (acct: any, newRole: 'leader' | 'student') => {
+    const promoting = newRole === 'leader'
+    const msg = promoting
+      ? `Make ${acct.email} a leader?\n\nLeaders can add/remove students, manage tasks, change roles, and view the activity log.`
+      : `Revoke leader from ${acct.email}?\n\nThey become a regular student and lose access to management tools.`
+    if (!confirm(msg)) return
+    try {
+      const headers = await authHeader()
+      await axios.post(`${API}/set-role`, { user_id: acct.id, role: newRole }, { headers })
+      await fetchAccounts()
+      alert(`✅ ${acct.email} is now a ${newRole}.`)
+    } catch (e: any) {
+      alert(e?.response?.data?.detail || 'Could not change the role. Check the API is running and configured.')
+    }
+  }
 
   const fetchStats = async () => {
     try {
@@ -152,8 +188,10 @@ export default function Students() {
     })
     setForm({ name: '', matric: '', programme: '', year: '', email: '', group_label: '' })
     setSelectedSkills([])
+    setPickedAccountId('')
     setShowForm(false)
     fetchStudents()
+    fetchAccounts()   // the picked account is now on the roster — refresh so it drops out of the picker
     alert(`✅ ${form.name} added successfully!`)
   }
 
@@ -224,6 +262,13 @@ export default function Students() {
     name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
   const groupColor = (name: string) => groups.find(g => g.name === name)?.color || '#a78bfa'
+
+  // Link roster rows to login accounts by email (the only join between the two).
+  const accountByEmail: { [email: string]: any } = {}
+  accounts.forEach(a => { if (a.email) accountByEmail[a.email.toLowerCase()] = a })
+  const accountFor = (s: any) => accountByEmail[(s.email || '').toLowerCase()]
+  // Accounts that exist but aren't on the roster yet — the pool for "assign existing account".
+  const unassignedAccounts = accounts.filter(a => !a.on_roster)
 
   // Cluster ordering: rank groups by how recently they were created (newest first),
   // ungrouped students fall to the bottom. Lower rank = higher up.
@@ -365,6 +410,58 @@ export default function Students() {
         {showForm && userRole === 'leader' && (
           <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5 mb-6">
             <p className="text-sm font-medium text-white mb-4">New student</p>
+
+            {/* Source: attach a roster row to someone who already signed up, or type in someone new. */}
+            <div className="flex gap-2 mb-4">
+              <button type="button"
+                onClick={() => setAddMode('existing')}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition ${addMode === 'existing'
+                  ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
+                  : 'border-white/10 text-white/40 hover:text-white'}`}>
+                Assign existing account
+              </button>
+              <button type="button"
+                onClick={() => { setAddMode('blank'); setPickedAccountId(''); setForm({ ...form, name: '', email: '' }) }}
+                className={`text-xs px-3 py-1.5 rounded-lg border transition ${addMode === 'blank'
+                  ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
+                  : 'border-white/10 text-white/40 hover:text-white'}`}>
+                Enter manually
+              </button>
+            </div>
+
+            {addMode === 'existing' && (
+              <div className="mb-4">
+                <p className="text-xs text-white/40 mb-2">
+                  Signed-up accounts not yet on the roster ({unassignedAccounts.length})
+                </p>
+                {unassignedAccounts.length === 0 ? (
+                  <p className="text-xs text-white/30">
+                    Everyone who has signed up is already on the roster. Switch to “Enter manually” to add
+                    someone who hasn’t created an account yet.
+                  </p>
+                ) : (
+                  <select
+                    value={pickedAccountId}
+                    onChange={e => {
+                      const a = accounts.find(x => x.id === e.target.value)
+                      setPickedAccountId(e.target.value)
+                      if (a) setForm(f => ({ ...f, name: a.name || f.name, email: a.email || '' }))
+                    }}
+                    className={`w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm outline-none focus:border-indigo-500 transition ${pickedAccountId ? 'text-white' : 'text-white/40'}`}>
+                    <option value="">Select an account…</option>
+                    {unassignedAccounts.map(a => (
+                      <option key={a.id} value={a.id} className="text-white">
+                        {a.email}{a.name ? ` — ${a.name}` : ''}{a.role === 'leader' ? ' (leader)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <p className="text-xs text-white/30 mt-2">
+                  Email is taken from the account and locked so the roster row stays linked to their login. Fill in the rest below.
+                </p>
+              </div>
+            )}
+
             <div className="grid grid-cols-2 gap-3 mb-4">
               {[
                 { key: 'name', placeholder: 'Full name' },
@@ -376,7 +473,8 @@ export default function Students() {
                   placeholder={f.placeholder}
                   value={(form as any)[f.key]}
                   onChange={e => setForm({ ...form, [f.key]: e.target.value })}
-                  className="bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500 transition"
+                  readOnly={addMode === 'existing' && f.key === 'email'}
+                  className={`bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500 transition ${addMode === 'existing' && f.key === 'email' ? 'opacity-60 cursor-not-allowed' : ''}`}
                 />
               ))}
               <select
@@ -503,6 +601,20 @@ export default function Students() {
                               {s.group_label}
                             </span>
                           )}
+                          {userRole === 'leader' && (() => {
+                            const acct = accountFor(s)
+                            if (!acct) return (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/30 border border-white/10">
+                                no login account
+                              </span>
+                            )
+                            if (acct.role === 'leader') return (
+                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                                leader
+                              </span>
+                            )
+                            return null
+                          })()}
                         </p>
                         <p className="text-xs text-white/40">{s.matric} · {s.programme} · Year {s.year}</p>
                         <div className="flex gap-2 flex-wrap mt-2">
@@ -538,6 +650,21 @@ export default function Students() {
                               className="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-white/60 hover:text-white transition">
                               {editingStudent === s.id ? 'Cancel' : 'Edit skills'}
                             </button>
+                            {(() => {
+                              const acct = accountFor(s)
+                              if (!acct) return null   // no login account to promote/demote
+                              return acct.role === 'leader' ? (
+                                <button onClick={() => changeRole(acct, 'student')}
+                                  className="text-xs px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition">
+                                  Revoke leader
+                                </button>
+                              ) : (
+                                <button onClick={() => changeRole(acct, 'leader')}
+                                  className="text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 transition">
+                                  Make leader
+                                </button>
+                              )
+                            })()}
                             {s.group_label && (
                               <button onClick={() => removeFromGroup(s.id, s.name, s.group_label)}
                                 className="text-xs px-3 py-1.5 rounded-lg border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 transition">

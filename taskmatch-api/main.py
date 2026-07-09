@@ -1,9 +1,15 @@
 import os
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client
 from collections import defaultdict
 from datetime import date, datetime, timezone
+
+try:
+    from dotenv import load_dotenv  # local dev: read taskmatch-api/.env (Render injects env vars directly)
+    load_dotenv()
+except Exception:
+    pass
 
 app = FastAPI()
 
@@ -19,10 +25,58 @@ app.add_middleware(
 )
 
 # Supabase creds come from env when deployed, with a local fallback so it still runs as-is.
+SUPABASE_URL = os.environ.get("SUPABASE_URL", "https://mcbmgpiaqprrgssuwwys.supabase.co")
 supabase = create_client(
-    os.environ.get("SUPABASE_URL", "https://mcbmgpiaqprrgssuwwys.supabase.co"),
+    SUPABASE_URL,
     os.environ.get("SUPABASE_KEY", "sb_publishable_7HmS0w3Iy1sP5iViaO2NIg_lTCw2DjZ"),
 )
+
+# Admin client uses the secret/service-role key for privileged auth operations
+# (listing accounts, changing roles). It is None until the key is configured, so those
+# endpoints fail loudly with a 503 rather than silently misbehaving. NEVER expose this key
+# to the browser — it bypasses row-level security.
+SUPABASE_SERVICE_ROLE_KEY = os.environ.get("SUPABASE_SERVICE_ROLE_KEY")
+admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY) if SUPABASE_SERVICE_ROLE_KEY else None
+
+
+# ─── Auth helpers — only the admin endpoints below are gated ───
+
+def _bearer(authorization):
+    if not authorization or not authorization.lower().startswith("bearer "):
+        raise HTTPException(status_code=401, detail="Missing bearer token")
+    return authorization.split(" ", 1)[1].strip()
+
+
+def require_user(authorization):
+    """Verify the caller's Supabase access token and return the auth user."""
+    token = _bearer(authorization)
+    try:
+        res = supabase.auth.get_user(token)
+    except Exception:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    if not res or not res.user:
+        raise HTTPException(status_code=401, detail="Invalid or expired session")
+    return res.user
+
+
+def require_leader(authorization):
+    """Caller must be an authenticated leader. Hiding a button in the UI is not security —
+    this server-side check is the real gate for privileged actions."""
+    user = require_user(authorization)
+    role = (user.user_metadata or {}).get("role", "student")
+    if role != "leader":
+        raise HTTPException(status_code=403, detail="Leader access required")
+    return user
+
+
+def require_admin_client():
+    if admin is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Admin key not configured on the server (set SUPABASE_SERVICE_ROLE_KEY).",
+        )
+    return admin
+
 
 WIP_LIMIT = 3
 
@@ -610,3 +664,98 @@ def recommend_tasks(student_id: str):
     growth_list.sort(key=lambda x: -x["match_score"])
 
     return {"student_id": student_id, "qualified": qualified_list, "growth": growth_list}
+
+
+# ─── Admin: accounts & roles (leader-gated, service-role) ──────
+
+def _list_all_users(admin_client):
+    """Walk every page of auth users (list_users caps at 50/page by default)."""
+    users, page = [], 1
+    while True:
+        batch = admin_client.auth.admin.list_users(page=page, per_page=200)
+        if not batch:
+            break
+        users.extend(batch)
+        if len(batch) < 200:
+            break
+        page += 1
+    return users
+
+
+def _account_view(user, roster_emails):
+    """Trim a Supabase auth user down to what the UI needs."""
+    meta = user.user_metadata or {}
+    email = user.email or ""
+    return {
+        "id": user.id,
+        "email": email,
+        "name": meta.get("full_name") or meta.get("name"),
+        "role": meta.get("role", "student"),
+        "on_roster": email.lower() in roster_emails,
+        "created_at": str(user.created_at) if user.created_at else None,
+    }
+
+
+@app.get("/accounts")
+def list_accounts(authorization: str = Header(None)):
+    """List every signup (login) account, flagged with whether it's already on the
+    student roster. Lets a leader attach a roster row to an existing account instead of
+    retyping an email that may not match anyone. Leader-only."""
+    require_leader(authorization)
+    admin_client = require_admin_client()
+
+    users = _list_all_users(admin_client)
+    roster = supabase.table("students").select("email").execute().data or []
+    roster_emails = {(s.get("email") or "").lower() for s in roster if s.get("email")}
+
+    accounts = [_account_view(u, roster_emails) for u in users]
+    accounts.sort(key=lambda a: (a["email"] or "").lower())
+    return {"accounts": accounts}
+
+
+@app.post("/set-role")
+def set_role(body: dict, authorization: str = Header(None)):
+    """Promote/demote an account between 'student' and 'leader'. Leader-only, with a guard
+    against demoting the last remaining leader (which would lock everyone out), and every
+    change written to the audit log."""
+    actor = require_leader(authorization)
+    admin_client = require_admin_client()
+
+    user_id = body.get("user_id")
+    new_role = body.get("role")
+    if new_role not in ("student", "leader"):
+        raise HTTPException(status_code=400, detail="role must be 'student' or 'leader'")
+    if not user_id:
+        raise HTTPException(status_code=400, detail="user_id required")
+
+    target = admin_client.auth.admin.get_user_by_id(user_id)
+    tuser = target.user if target else None
+    if not tuser:
+        raise HTTPException(status_code=404, detail="Account not found")
+
+    meta = dict(tuser.user_metadata or {})
+    current_role = meta.get("role", "student")
+    if current_role == new_role:
+        return {"success": True, "unchanged": True, "role": new_role, "email": tuser.email}
+
+    # Guard: never demote the last leader — that would leave nobody able to manage the project.
+    if current_role == "leader" and new_role == "student":
+        leaders = [u for u in _list_all_users(admin_client)
+                   if (u.user_metadata or {}).get("role") == "leader"]
+        if len(leaders) <= 1:
+            raise HTTPException(status_code=400, detail="Cannot demote the last remaining leader.")
+
+    # Merge — update_user_by_id replaces user_metadata wholesale, so keep the rest (e.g. full_name).
+    meta["role"] = new_role
+    admin_client.auth.admin.update_user_by_id(user_id, {"user_metadata": meta})
+
+    log_activity(
+        action="account.role_changed",
+        entity_type="account",
+        entity_id=user_id,
+        summary=f"{tuser.email} role changed: {current_role} → {new_role}",
+        actor_email=getattr(actor, "email", None),
+        actor_role="leader",
+        details={"target_email": tuser.email, "from": current_role, "to": new_role},
+    )
+    return {"success": True, "role": new_role, "email": tuser.email}
