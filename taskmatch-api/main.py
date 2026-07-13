@@ -431,6 +431,53 @@ def start(body: dict):
     return {"success": True, "in_progress_at": started_at}
 
 
+@app.post("/unassign")
+def unassign(body: dict):
+    """Remove a student from a task (undo an assignment). Completed assignments are kept —
+    they hold the student's performance record. If removing the last active assignee leaves
+    the task with no one working it, roll the task back to 'New'."""
+    assignment_id = body.get("assignment_id")
+    actor_email = body.get("actor_email")
+    actor_role = body.get("actor_role")
+    if not assignment_id:
+        raise HTTPException(status_code=400, detail="assignment_id required")
+
+    rows = (
+        supabase.table("assignments")
+        .select("id, task_id, student_id, status")
+        .eq("id", assignment_id)
+        .execute()
+    ).data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    a = rows[0]
+    if a["status"] == "Completed":
+        raise HTTPException(status_code=400,
+                            detail="Can't remove a completed assignment — it holds the student's performance record.")
+
+    # Names first (for a readable audit line), then delete.
+    student = (supabase.table("students").select("name").eq("id", a["student_id"]).execute()).data
+    task = (supabase.table("tasks").select("description, status").eq("id", a["task_id"]).execute()).data
+    supabase.table("assignments").delete().eq("id", assignment_id).execute()
+
+    # If nobody is actively on the task anymore, send it back to 'New'.
+    remaining = (
+        supabase.table("assignments").select("status").eq("task_id", a["task_id"]).execute()
+    ).data
+    any_active = any(r["status"] in ("Assigned", "In Progress") for r in remaining)
+    if task and task[0].get("status") == "In Progress" and not any_active:
+        supabase.table("tasks").update({"status": "New"}).eq("id", a["task_id"]).execute()
+
+    log_activity(
+        action="assignment.removed", entity_type="assignment", entity_id=assignment_id,
+        summary=f"{student[0]['name'] if student else a['student_id']} removed from task "
+                f"'{task[0]['description'] if task else a['task_id']}'",
+        actor_email=actor_email, actor_role=actor_role,
+        details={"task_id": a["task_id"], "student_id": a["student_id"], "prev_status": a["status"]},
+    )
+    return {"success": True, "task_reverted": bool(task and task[0].get("status") == "In Progress" and not any_active)}
+
+
 @app.post("/complete")
 def complete(body: dict):
     """Mark a student's assignment complete, compute their performance score,

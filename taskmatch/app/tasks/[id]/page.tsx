@@ -79,6 +79,15 @@ export default function TaskDetail() {
     await Promise.all([loadAssignees(), loadRecs()])
   }
 
+  // Turn an axios error into a message that names the real reason instead of a bare "Failed"
+  // (e.g. a closed task, or the free-tier backend still waking up).
+  const errMsg = (err: any, fallback: string) => {
+    const detail = err?.response?.data?.detail
+    if (detail) return detail
+    if (err?.response) return `${fallback} (server responded ${err.response.status})`
+    return `${fallback} — couldn't reach the server. It may be waking up (free tier); try again in a moment.`
+  }
+
   const assignStudent = async (student_id: string, name: string) => {
     if (assigning) return
     setAssigning(student_id)
@@ -86,14 +95,23 @@ export default function TaskDetail() {
       await axios.post(`${API}/assign`, { task_id: id, student_id, actor_email: userEmail, actor_role: userRole })
       await refresh()
       alert(`✅ ${name} assigned!`)
-    } catch (err: any) { alert(`❌ ${err.response?.data?.detail || 'Failed'}`) } finally { setAssigning(null) }
+    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not assign')}`) } finally { setAssigning(null) }
+  }
+
+  const removeAssignee = async (assignmentId: string, name: string, status: string) => {
+    if (status === 'Completed') { alert("This assignment is completed — it's kept as the student's performance record and can't be removed."); return }
+    if (!confirm(`Remove ${name} from this task?\n\nThey keep their profile and history; only this assignment is removed.${status === 'In Progress' ? '\n\nTheir running timer for this task will be discarded.' : ''}`)) return
+    try {
+      await axios.post(`${API}/unassign`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
+      await refresh()
+    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not remove')}`) }
   }
 
   const startAssignment = async (assignmentId: string) => {
     try {
       await axios.post(`${API}/start`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
       await refresh()
-    } catch (err: any) { alert(`❌ ${err.response?.data?.detail || 'Failed to start'}`) }
+    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not start')}`) }
   }
 
   const completeAssignment = async (assignmentId: string, name: string) => {
@@ -106,7 +124,7 @@ export default function TaskDetail() {
       const res = await axios.post(`${API}/complete`, { assignment_id: assignmentId, actual_hours, actor_email: userEmail, actor_role: userRole })
       alert(`✅ Completed! Score: ${res.data.score ?? 'n/a'}`)
       await refresh()
-    } catch (err: any) { alert(`❌ ${err.response?.data?.detail || 'Failed'}`) }
+    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not complete')}`) }
   }
 
   const addComment = async () => {
@@ -225,6 +243,10 @@ export default function TaskDetail() {
                           <button onClick={() => completeAssignment(a.id, a.students?.name)}
                             className="text-xs px-3 py-1.5 rounded-lg border border-green-500/30 text-green-400 hover:bg-green-500/10 transition">Complete</button>
                         )}
+                        {userRole === 'leader' && a.status !== 'Completed' && (
+                          <button onClick={() => removeAssignee(a.id, a.students?.name, a.status)} title="Remove from this task"
+                            className="text-xs px-2.5 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition">Remove</button>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -234,6 +256,11 @@ export default function TaskDetail() {
               {/* Recommendations */}
               <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
                 <p className="text-sm font-medium text-white mb-1">Recommended</p>
+                {isClosed(task) && (
+                  <div className="my-2 rounded-lg border border-white/15 bg-white/5 p-2.5">
+                    <p className="text-xs text-white/70">🔒 This task is closed (SLA window expired), so assignments are disabled. This is about the task&apos;s deadline — not any student&apos;s skill level.</p>
+                  </div>
+                )}
                 {meta?.suggested_pair && (
                   <div className="my-2 rounded-lg border border-indigo-500/30 bg-indigo-500/10 p-2.5">
                     <p className="text-xs font-medium text-indigo-300 mb-1">⚖️ Suggested balanced pair</p>
@@ -247,7 +274,7 @@ export default function TaskDetail() {
                         <p className="text-sm text-white flex items-center gap-2 flex-wrap">
                           {r.name}
                           {bandChip(r.band, r.avg_score)}
-                          {!r.qualified && <span className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">{r.over_wip ? 'WIP full' : 'below min'}</span>}
+                          {!r.qualified && <span title={r.over_wip ? 'At their work-in-progress limit' : 'Below the required skill level — can still be assigned as a growth pairing'} className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">{r.over_wip ? 'WIP full' : 'below min'}</span>}
                         </p>
                         <p className="text-xs text-white/30 italic mt-0.5">{r.justification}</p>
                       </div>

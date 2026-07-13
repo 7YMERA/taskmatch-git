@@ -115,6 +115,37 @@ export default function Dashboard() {
   const fastest = byScoreDesc[0] || null
   const slowest = byScoreDesc.length > 1 ? byScoreDesc[byScoreDesc.length - 1] : null
 
+  // ── Visualization data ──
+  // Task lifecycle split (donut). Buckets are MUTUALLY EXCLUSIVE (each task counted once,
+  // most-urgent state wins) so the ring is a true part-to-whole of every task. Colours match
+  // the status chips used across the app.
+  const bucketOf = (t: any) =>
+    t.status === 'Completed' ? 'Completed'
+      : isClosed(t) ? 'Closed'
+        : isDelayed(t) ? 'Delayed'
+          : t.status === 'In Progress' ? 'Ongoing'
+            : 'New'
+  const LIFECYCLE = [
+    { label: 'New', color: '#eab308' },
+    { label: 'Ongoing', color: '#22c55e' },
+    { label: 'Completed', color: '#3b82f6' },
+    { label: 'Delayed', color: '#ef4444' },
+    { label: 'Closed', color: '#9ca3af' },
+  ]
+  const bucketTally = tasks.reduce((acc: any, t: any) => { const b = bucketOf(t); acc[b] = (acc[b] || 0) + 1; return acc }, {})
+  const lifecycle = LIFECYCLE.map(s => ({ ...s, value: bucketTally[s.label] || 0 })).filter(s => s.value > 0)
+  const lifecycleTotal = lifecycle.reduce((s, x) => s + x.value, 0)  // == tasks.length
+
+  // Team performance-band distribution (horizontal bars).
+  const BANDS = [
+    { band: 'high', label: 'High', color: '#10b981' },
+    { band: 'avg', label: 'Average', color: '#f59e0b' },
+    { band: 'low', label: 'Low', color: '#ef4444' },
+    { band: 'unrated', label: 'Unrated', color: '#6b7280' },
+  ]
+  const bandCounts = BANDS.map(b => ({ ...b, count: statsList.filter(s => s.band === b.band).length }))
+  const bandMax = Math.max(1, ...bandCounts.map(b => b.count))
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
@@ -161,6 +192,75 @@ export default function Dashboard() {
               <p className="text-xs text-white/30 mt-1">{m.sub}</p>
             </Link>
           ))}
+        </div>
+
+        {/* Visualizations — task lifecycle donut + team performance bars */}
+        <div className="grid grid-cols-2 gap-6 mb-6">
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
+            <p className="text-sm font-medium text-white mb-1">Task lifecycle</p>
+            <p className="text-xs text-white/40 mb-3">Where the {tasks.length} task{tasks.length === 1 ? '' : 's'} stand right now</p>
+            {loading ? <p className="text-white/40 text-sm">Loading…</p>
+              : lifecycleTotal === 0 ? <p className="text-white/40 text-sm">No tasks yet.</p>
+              : (
+                <div className="flex items-center gap-6">
+                  <div className="relative w-40 h-40 shrink-0">
+                    <svg viewBox="0 0 140 140" className="w-40 h-40 -rotate-90">
+                      <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="20" />
+                      {(() => {
+                        const C = 2 * Math.PI * 54
+                        let offset = 0
+                        return lifecycle.map(s => {
+                          const len = (s.value / lifecycleTotal) * C
+                          const seg = (
+                            <circle key={s.label} cx="70" cy="70" r="54" fill="none" stroke={s.color} strokeWidth="20"
+                              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset} strokeLinecap="butt">
+                              <title>{`${s.label}: ${s.value} (${Math.round((s.value / lifecycleTotal) * 100)}%)`}</title>
+                            </circle>
+                          )
+                          offset += len
+                          return seg
+                        })
+                      })()}
+                    </svg>
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      <span className="text-2xl font-semibold text-white leading-none">{lifecycleTotal}</span>
+                      <span className="text-[10px] text-white/40 mt-1">tasks</span>
+                    </div>
+                  </div>
+                  <div className="flex-1 flex flex-col gap-1.5">
+                    {lifecycle.map(s => (
+                      <div key={s.label} className="flex items-center gap-2 text-xs">
+                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
+                        <span className="text-white/70 flex-1">{s.label}</span>
+                        <span className="text-white/50 tabular-nums">{s.value}</span>
+                        <span className="text-white/30 tabular-nums w-9 text-right">{Math.round((s.value / lifecycleTotal) * 100)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+          </div>
+
+          <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
+            <p className="text-sm font-medium text-white mb-1">Performance spread</p>
+            <p className="text-xs text-white/40 mb-4">Students by efficiency band</p>
+            {loading ? <p className="text-white/40 text-sm">Loading…</p>
+              : statsList.length === 0 ? <p className="text-white/40 text-sm">No students yet.</p>
+              : (
+                <div className="flex flex-col gap-3 mt-2">
+                  {bandCounts.map(b => (
+                    <div key={b.band} className="flex items-center gap-3">
+                      <span className="text-xs text-white/50 w-16 shrink-0">{b.label}</span>
+                      <div className="flex-1 h-5 rounded bg-white/5 overflow-hidden">
+                        <div className="h-full rounded transition-all" style={{ width: `${(b.count / bandMax) * 100}%`, backgroundColor: b.color, minWidth: b.count ? '0.5rem' : 0 }} />
+                      </div>
+                      <span className="text-xs text-white/60 tabular-nums w-6 text-right">{b.count}</span>
+                    </div>
+                  ))}
+                  <p className="text-[10px] text-white/30 mt-1">Unrated = no completed scored tasks yet.</p>
+                </div>
+              )}
+          </div>
         </div>
 
         {/* Fastest / slowest task */}

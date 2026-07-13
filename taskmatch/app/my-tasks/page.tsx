@@ -25,6 +25,7 @@ export default function MyTasks() {
   const [notFound, setNotFound] = useState(false)
   const [busy, setBusy] = useState<string | null>(null)
   const [now, setNow] = useState(0)
+  const [showTimers, setShowTimers] = useState(true)   // the elapsed-time box can be shown/hidden
 
   useEffect(() => { init() }, [])
   // live clock for the running timers
@@ -33,6 +34,23 @@ export default function MyTasks() {
     const t = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(t)
   }, [])
+  // remember the show/hide-timers preference across visits
+  useEffect(() => {
+    const saved = typeof window !== 'undefined' ? localStorage.getItem('tm_show_timers') : null
+    if (saved !== null) setShowTimers(saved === '1')
+  }, [])
+  const toggleTimers = () => setShowTimers(v => {
+    const nv = !v
+    try { localStorage.setItem('tm_show_timers', nv ? '1' : '0') } catch { /* private mode */ }
+    return nv
+  })
+
+  const errMsg = (err: any, fallback: string) => {
+    const detail = err?.response?.data?.detail
+    if (detail) return detail
+    if (err?.response) return `${fallback} (server responded ${err.response.status})`
+    return `${fallback} — couldn't reach the server. It may be waking up (free tier); try again in a moment.`
+  }
 
   const init = async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -60,7 +78,7 @@ export default function MyTasks() {
     try {
       await axios.post(`${API}/start`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
       if (student) await load(student.id)
-    } catch (err: any) { alert(`❌ ${err.response?.data?.detail || 'Failed to start'}`) }
+    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not start')}`) }
     finally { setBusy(null) }
   }
 
@@ -77,7 +95,7 @@ export default function MyTasks() {
       const res = await axios.post(`${API}/complete`, { assignment_id: assignmentId, actual_hours, actor_email: userEmail, actor_role: userRole })
       alert(`✅ Completed!${userRole === 'leader' && res.data.score != null ? ` Score: ${res.data.score}` : ''}`)
       if (student) await load(student.id)
-    } catch (err: any) { alert(`❌ ${err.response?.data?.detail || 'Failed to complete'}`) }
+    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not complete')}`) }
     finally { setBusy(null) }
   }
 
@@ -111,7 +129,7 @@ export default function MyTasks() {
         ) : (
           <>
             {/* Tabs */}
-            <div className="flex gap-2 mb-4">
+            <div className="flex gap-2 mb-4 items-center">
               <button onClick={() => setTab('active')}
                 className={`text-xs px-4 py-2 rounded-lg border transition ${tab === 'active' ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-white/10 text-white/40 hover:text-white'}`}>
                 To do ({active.length})
@@ -120,6 +138,12 @@ export default function MyTasks() {
                 className={`text-xs px-4 py-2 rounded-lg border transition ${tab === 'completed' ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-white/10 text-white/40 hover:text-white'}`}>
                 Completed ({completed.length})
               </button>
+              {tab === 'active' && active.some(a => a.status === 'In Progress') && (
+                <button onClick={toggleTimers}
+                  className="ml-auto text-xs px-3 py-2 rounded-lg border border-white/10 text-white/50 hover:text-white hover:border-white/25 transition">
+                  {showTimers ? '⏱ Hide timers' : '⏱ Show timers'}
+                </button>
+              )}
             </div>
 
             {tab === 'active' ? (
@@ -147,9 +171,15 @@ export default function MyTasks() {
                           </button>
                         </div>
                       ) : (
-                        <div className="text-right">
-                          <p className="text-lg font-mono font-semibold text-emerald-400 tabular-nums">{elapsed(a.in_progress_at)}</p>
-                          <p className="text-[10px] text-white/30 mb-2">running</p>
+                        <div className="flex flex-col items-end gap-2">
+                          {showTimers ? (
+                            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-right min-w-[7.5rem]">
+                              <p className="text-lg font-mono font-semibold text-emerald-400 tabular-nums leading-none">{elapsed(a.in_progress_at)}</p>
+                              <p className="text-[10px] text-emerald-400/60 mt-1">⏱ elapsed · running</p>
+                            </div>
+                          ) : (
+                            <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400">running</span>
+                          )}
                           <button onClick={() => completeTask(a.id, a.tasks?.description || 'this task')} disabled={busy === a.id}
                             className="text-xs px-4 py-2 rounded-lg border border-green-500/30 text-green-400 hover:bg-green-500/10 transition disabled:opacity-50">
                             {busy === a.id ? '…' : '✓ Complete'}
