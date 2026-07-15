@@ -514,7 +514,7 @@ const updateTaskStatus = async (id: string, status: string) => {
                   <div className="w-64 shrink-0 min-w-0">
                     <div className="flex items-center gap-2">
                       {task.group_label && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: groupColor(task.group_label) }} title={task.group_label} />}
-                      <span className="text-sm font-medium text-white truncate">{task.description}</span>
+                      <Link href={`/tasks/${task.id}`} onClick={e => e.stopPropagation()} className="text-sm font-medium text-white hover:underline truncate" title="Open task">{task.description}</Link>
                     </div>
                     <p className="text-xs text-white/40 truncate mt-0.5">
                       {task.committed_hours != null ? `${task.committed_hours}h committed` : 'no hours set'}
@@ -550,8 +550,6 @@ const updateTaskStatus = async (id: string, status: string) => {
                         <>
                           <div className="fixed inset-0 z-10" onClick={() => setTaskMenuOpen(null)} />
                           <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-[#202020] border border-white/10 rounded-lg shadow-xl py-1">
-                            <Link href={`/tasks/${task.id}`} className="block px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 transition">Open task ↗</Link>
-                            <div className="my-1 h-px bg-white/10" />
                             <p className="px-3 pt-1 pb-0.5 text-[10px] text-white/30 tracking-wide">SET STATUS</p>
                             {['New', 'In Progress', 'Completed'].map(st => (
                               <button key={st} disabled={isClosed(task)} onClick={() => { setTaskMenuOpen(null); updateTaskStatus(task.id, st) }}
