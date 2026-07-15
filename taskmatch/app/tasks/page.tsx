@@ -14,7 +14,6 @@ const supabase = createClient(
 )
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const PROFICIENCY = ['', 'Beginner', 'Intermediate', 'Advanced']
 const PAGE_SIZE = 5
 const SEVERITIES = ['Low', 'Medium', 'Critical']
 const GROUP_COLORS = ['#a78bfa', '#34d399', '#38bdf8', '#fbbf24', '#fb7185', '#2dd4bf', '#fb923c', '#f472b6']
@@ -40,6 +39,7 @@ export default function Tasks() {
   const [expandedTask, setExpandedTask] = useState<string | null>(null)
   const [assigning, setAssigning] = useState<string | null>(null)
   const [taskAssignees, setTaskAssignees] = useState<{ [task_id: string]: any[] }>({})
+  const [taskMenuOpen, setTaskMenuOpen] = useState<string | null>(null)   // per-row "⋯" actions menu
 
   useEffect(() => {
     // Open with a status filter if the dashboard (or a link) passed ?status=...
@@ -195,11 +195,12 @@ const updateTaskStatus = async (id: string, status: string) => {
     return 'bg-white/10 text-white/40'
   }
 
-  const severityColor = (severity: string) => {
-    if (severity === 'Critical') return 'bg-red-500/20 text-red-400'
-    if (severity === 'Medium') return 'bg-amber-500/20 text-amber-400'
-    if (severity === 'Low') return 'bg-white/10 text-white/50'
-    return 'bg-white/10 text-white/40'
+  // Calm indicators — small dots carry the signal instead of filled pills.
+  const severityDot = (s: string) => s === 'Critical' ? '#ef4444' : s === 'Medium' ? '#f59e0b' : 'rgba(255,255,255,0.35)'
+  const statusDot = (s: string) => s === 'New' ? '#eab308' : s === 'In Progress' ? '#22c55e' : s === 'Completed' ? '#3b82f6' : 'rgba(255,255,255,0.3)'
+  const taskSkillNames = (t: any) => {
+    const names = (t.task_skills || []).map((ts: any) => ts.skills?.skill_name).filter(Boolean)
+    return names.slice(0, 3).join(' · ') + (names.length > 3 ? ` +${names.length - 3}` : '')
   }
 
   // SLA-style states. Delayed = breached & not done (active). Closed = breached
@@ -509,80 +510,58 @@ const updateTaskStatus = async (id: string, status: string) => {
             <p className="text-white/40 text-sm">{tasks.length === 0 ? 'No tasks yet.' : 'No tasks in this group.'}</p>
           ) : (
             shownTasks.map(task => (
-              <div key={task.id} className="bg-[#1a1a1a] border rounded-xl overflow-hidden"
-                style={{ borderColor: task.group_label ? groupColor(task.group_label) : 'rgba(255,255,255,0.1)' }}>
+              <div key={task.id} className="bg-[#161616] border border-white/[0.06] hover:border-white/[0.12] rounded-xl overflow-hidden transition">
                 <div
-                  className="flex items-center gap-4 p-4 cursor-pointer hover:bg-white/5 transition"
+                  className="flex items-center gap-3.5 p-4 cursor-pointer hover:bg-white/[0.02] transition"
                   onClick={() => loadRecommendations(task.id)}>
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-white">{task.description}</p>
-                    <div className="flex gap-2 mt-1 flex-wrap items-center">
-                      {task.severity && (
-                        <span className={`text-xs px-2 py-0.5 rounded-full ${severityColor(task.severity)}`}>
-                          {task.severity}
-                        </span>
-                      )}
-                      {task.group_label && (
-                        <span className="text-xs px-2 py-0.5 rounded-full border"
-                          style={{ backgroundColor: `${groupColor(task.group_label)}22`, color: groupColor(task.group_label), borderColor: `${groupColor(task.group_label)}55` }}>
-                          {task.group_label}
-                        </span>
-                      )}
-                      {task.task_skills?.map((ts: any) => (
-                        <span key={ts.skill_id} className="text-xs px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">
-                          {ts.skills?.skill_name} · {PROFICIENCY[ts.min_proficiency]}+
-                        </span>
-                      ))}
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: severityDot(task.severity) }} title={`${task.severity || 'Low'} severity`} />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      {task.group_label && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: groupColor(task.group_label) }} title={task.group_label} />}
+                      <span className="text-sm font-medium text-white truncate">{task.description}</span>
                     </div>
+                    <p className="text-xs text-white/40 truncate mt-0.5">
+                      {task.committed_hours != null && <>{task.committed_hours}h</>}
+                      {(task.start_date || task.due_date) && <>{task.committed_hours != null ? ' · ' : ''}{task.start_date || '…'} → {task.due_date || '…'}</>}
+                      {task.task_skills?.length > 0 && <span className="text-white/30"> · {taskSkillNames(task)}</span>}
+                    </p>
                   </div>
-                  <div className="text-right text-xs text-white/40 shrink-0">
-                    {task.committed_hours != null && <p>{task.committed_hours}h committed</p>}
-                    {(task.start_date || task.due_date) && (
-                      <p>{task.start_date || '…'} → {task.due_date || '…'}</p>
-                    )}
+
+                  <div className="flex items-center gap-1.5 shrink-0" title={`Status: ${task.status}`}>
+                    <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusDot(task.status) }} />
+                    <span className="text-xs text-white/45">{task.status === 'In Progress' ? 'Ongoing' : task.status}</span>
                   </div>
-                  <span className={`text-xs px-2 py-1 rounded-full ${statusColor(task.status)}`}>
-                    {task.status}
-                  </span>
-                  {isLate(task) && (
-                    <span className="text-xs px-2 py-1 rounded-full bg-amber-500/20 text-amber-400" title={`Delivered after due ${task.due_date}`}>
-                      Late
-                    </span>
-                  )}
-                  {isDelayed(task) && (
-                    <span className="text-xs px-2 py-1 rounded-full bg-red-500/20 text-red-400" title={`SLA breached — past due ${task.due_date}`}>
-                      Delayed
-                    </span>
-                  )}
-                  {isClosed(task) && (
-                    <span className="text-xs px-2 py-1 rounded-full bg-white/10 text-white/50" title={`Auto-closed — overdue more than ${GRACE_DAYS} days`}>
-                      Closed 🔒
-                    </span>
-                  )}
+                  {isLate(task) && <span className="text-[11px] text-amber-400 shrink-0" title={`Delivered after due ${task.due_date}`}>late</span>}
+                  {isDelayed(task) && <span className="text-[11px] text-red-400 shrink-0" title={`Past due ${task.due_date}`}>delayed</span>}
+                  {isClosed(task) && <span className="text-[11px] text-white/40 shrink-0" title={`Auto-closed — overdue more than ${GRACE_DAYS} days`}>closed 🔒</span>}
+
                   {userRole === 'leader' && (
-                    <div className="flex gap-2" onClick={e => e.stopPropagation()}>
-                      <select
-                        value={task.status}
-                        onChange={e => updateTaskStatus(task.id, e.target.value)}
-                        disabled={isClosed(task)}
-                        title={isClosed(task) ? 'Closed — locked' : ''}
-                        className="bg-[#1a1a1a] border border-white/10 rounded-lg px-2 py-1 text-xs text-white outline-none disabled:opacity-40">
-                        <option value="New">New</option>
-                        <option value="In Progress">In Progress</option>
-                        <option value="Completed">Completed</option>
-                      </select>
-                      <button
-                        onClick={() => deleteTask(task.id, task.description)}
-                        className="text-xs px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition">
-                        Delete
-                      </button>
+                    <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
+                      <button onClick={() => setTaskMenuOpen(taskMenuOpen === task.id ? null : task.id)}
+                        className="w-8 h-8 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition flex items-center justify-center text-lg leading-none">⋯</button>
+                      {taskMenuOpen === task.id && (
+                        <>
+                          <div className="fixed inset-0 z-10" onClick={() => setTaskMenuOpen(null)} />
+                          <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-[#202020] border border-white/10 rounded-lg shadow-xl py-1">
+                            <Link href={`/tasks/${task.id}`} className="block px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 transition">Open task ↗</Link>
+                            <div className="my-1 h-px bg-white/10" />
+                            <p className="px-3 pt-1 pb-0.5 text-[10px] text-white/30 tracking-wide">SET STATUS</p>
+                            {['New', 'In Progress', 'Completed'].map(st => (
+                              <button key={st} disabled={isClosed(task)} onClick={() => { setTaskMenuOpen(null); updateTaskStatus(task.id, st) }}
+                                className="flex items-center gap-2 w-full text-left px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 transition disabled:opacity-30">
+                                <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: statusDot(st) }} />
+                                {st === 'In Progress' ? 'Ongoing' : st}
+                                {task.status === st && <span className="ml-auto text-white/40">✓</span>}
+                              </button>
+                            ))}
+                            <div className="my-1 h-px bg-white/10" />
+                            <button onClick={() => { setTaskMenuOpen(null); deleteTask(task.id, task.description) }} className="block w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-white/10 transition">Delete task</button>
+                          </div>
+                        </>
+                      )}
                     </div>
                   )}
-                  <Link href={`/tasks/${task.id}`} onClick={e => e.stopPropagation()}
-                    className="text-xs text-white/40 hover:text-white border border-white/10 rounded-lg px-2 py-1 transition">
-                    Open ↗
-                  </Link>
-                  <span className="text-white/30 text-xs">{expandedTask === task.id ? '▲' : '▼'}</span>
+                  <span className="text-white/30 text-xs shrink-0">{expandedTask === task.id ? '▲' : '▼'}</span>
                 </div>
 
                 {/* Expanded panel: assigned team + (for open tasks) recommendations */}

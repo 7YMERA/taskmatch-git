@@ -14,17 +14,9 @@ const supabase = createClient(
 )
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
-const PROFICIENCY = ['', 'Beginner', 'Intermediate', 'Advanced']
 const PROGRAMMES = ['CS', 'IT', 'IS']  // UTP programmes: Computer Science, Information Technology, Information Systems
 // Bright palette that stays readable on the dark background
 const GROUP_COLORS = ['#a78bfa', '#34d399', '#38bdf8', '#fbbf24', '#fb7185', '#2dd4bf', '#fb923c', '#f472b6']
-
-const bandClass = (band: string) => ({
-  high: 'bg-emerald-500/20 text-emerald-400',
-  avg: 'bg-amber-500/20 text-amber-400',
-  low: 'bg-red-500/20 text-red-400',
-  unrated: 'bg-white/10 text-white/40',
-}[band] || 'bg-white/10 text-white/40')
 
 export default function Students() {
   const router = useRouter()
@@ -44,6 +36,7 @@ export default function Students() {
   const [stats, setStats] = useState<{ [student_id: string]: any }>({})
   const [wip, setWip] = useState<{ [student_id: string]: any }>({})
   const [wipLimit, setWipLimit] = useState(3)
+  const [menuOpen, setMenuOpen] = useState<string | null>(null)   // per-row "⋯" actions menu
   const [groupFilter, setGroupFilter] = useState('all')
   const [groups, setGroups] = useState<any[]>([])
   const [showGroupForm, setShowGroupForm] = useState(false)
@@ -283,15 +276,28 @@ export default function Students() {
   // Accounts that exist but aren't on the roster yet — the pool for "assign existing account".
   const unassignedAccounts = accounts.filter(a => !a.on_roster)
 
-  // WIP badge per student: green with room, amber on the last slot, red at/over the limit.
-  const wipChip = (sid: string) => {
+  // Skills as quiet text: first few names, then a +N counter (full list on the profile).
+  const skillNames = (s: any) => {
+    const names = (s.student_skills || []).map((ss: any) => ss.skills?.skill_name).filter(Boolean)
+    return names.slice(0, 3).join(' · ') + (names.length > 3 ? ` +${names.length - 3}` : '')
+  }
+
+  // WIP as a small slot meter, coloured only when it matters (amber on the last slot, red at limit).
+  const wipMeter = (sid: string) => {
     const w = wip[sid]
-    if (!w) return null
-    const cls = w.wip >= wipLimit ? 'bg-red-500/20 text-red-400'
-      : w.wip >= wipLimit - 1 ? 'bg-amber-500/20 text-amber-400'
-        : 'bg-emerald-500/20 text-emerald-400'
-    return <span title={`${w.wip} active task${w.wip === 1 ? '' : 's'} out of a limit of ${wipLimit}`}
-      className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>WIP {w.wip}/{wipLimit}</span>
+    if (!w) return <div className="w-14 shrink-0" />
+    const atLimit = w.wip >= wipLimit
+    const fill = atLimit ? '#ef4444' : w.wip >= wipLimit - 1 ? '#f59e0b' : 'rgba(255,255,255,0.5)'
+    return (
+      <div className="flex items-center gap-1.5 shrink-0 w-14" title={`${w.wip} of ${wipLimit} active tasks`}>
+        <span className="flex gap-0.5">
+          {Array.from({ length: wipLimit }).map((_, i) => (
+            <span key={i} className="w-1 h-3.5 rounded-sm" style={{ backgroundColor: i < w.wip ? fill : 'rgba(255,255,255,0.1)' }} />
+          ))}
+        </span>
+        <span className="text-xs tabular-nums" style={{ color: atLimit ? '#f87171' : 'rgba(255,255,255,0.4)' }}>{w.wip}/{wipLimit}</span>
+      </div>
+    )
   }
 
   // Cluster ordering: rank groups by how recently they were created (newest first),
@@ -604,111 +610,77 @@ export default function Students() {
           ) : (
             <div className="flex flex-col gap-3">
               {shownStudents.map(s => (
-                <div key={s.id} className="bg-white/5 rounded-lg p-3 border"
-                  style={{ borderColor: s.group_label ? groupColor(s.group_label) : 'rgba(255,255,255,0.08)' }}>
-                  <div className="flex items-stretch gap-4">
-                    {/* Left block — identity + skills (avatar vertically centered) */}
-                    <div className="flex-1 flex gap-4 items-center">
-                      {s.avatar_url ? (
-                        <img src={s.avatar_url} alt="" className="w-14 h-14 rounded-full object-cover shrink-0" />
-                      ) : (
-                        <div className="w-14 h-14 rounded-full bg-indigo-500/20 text-indigo-300 flex items-center justify-center text-lg font-semibold shrink-0">
-                          {initials(s.name)}
-                        </div>
-                      )}
-                      <div className="flex-1">
-                        <p className="flex items-center gap-2 flex-wrap">
-                          <Link href={`/students/${s.id}`} className="text-sm font-medium text-white hover:underline">{s.name}</Link>
-                          {s.group_label && (
-                            <span className="text-xs px-2 py-0.5 rounded-full border"
-                              style={{ backgroundColor: `${groupColor(s.group_label)}22`, color: groupColor(s.group_label), borderColor: `${groupColor(s.group_label)}55` }}>
-                              {s.group_label}
-                            </span>
-                          )}
-                          {wipChip(s.id)}
-                          {userRole === 'leader' && (() => {
-                            const acct = accountFor(s)
-                            if (!acct) return (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-white/5 text-white/30 border border-white/10">
-                                no login account
-                              </span>
-                            )
-                            if (acct.role === 'leader') return (
-                              <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                                leader
-                              </span>
-                            )
-                            return null
-                          })()}
-                        </p>
-                        <p className="text-xs text-white/40">{s.matric} · {s.programme} · Year {s.year}</p>
-                        <div className="flex gap-2 flex-wrap mt-2">
-                          {(s.student_skills || []).length === 0 ? (
-                            <span className="text-xs text-white/30">No skills declared</span>
-                          ) : s.student_skills.map((ss: any) => (
-                            <span key={ss.skill_id} className="text-xs px-2 py-1 rounded-full bg-blue-500/20 text-blue-400">
-                              {ss.skills?.skill_name} · {PROFICIENCY[ss.proficiency]}
-                            </span>
-                          ))}
-                        </div>
+                <div key={s.id} className="rounded-lg border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02] transition">
+                  <div className="flex items-center gap-3.5 p-3">
+                    {s.avatar_url ? (
+                      <img src={s.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-white/10 text-white/50 flex items-center justify-center text-sm font-medium shrink-0">
+                        {initials(s.name)}
                       </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        {s.group_label && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: groupColor(s.group_label) }} title={s.group_label} />}
+                        <Link href={`/students/${s.id}`} className="text-sm font-medium text-white hover:underline truncate">{s.name}</Link>
+                        {userRole === 'leader' && (() => {
+                          const acct = accountFor(s)
+                          if (!acct) return <span className="text-[11px] text-white/25 shrink-0" title="No login account linked to this roster row">no login</span>
+                          if (acct.role === 'leader') return <span className="text-[11px] text-indigo-300/70 shrink-0" title="This account is a leader">leader</span>
+                          return null
+                        })()}
+                      </div>
+                      <p className="text-xs text-white/40 truncate mt-0.5">
+                        {s.matric} · {s.programme} · Year {s.year}
+                        {(s.student_skills || []).length > 0
+                          ? <span className="text-white/30"> · {skillNames(s)}</span>
+                          : <span className="text-white/25"> · no skills</span>}
+                      </p>
                     </div>
 
-                    {/* Right block — rating + actions (leader) / See profile (everyone) */}
-                    <div className="flex flex-col items-end justify-between gap-3 border-l border-white/10 pl-4 shrink-0">
-                      {userRole === 'leader' && stats[s.id] && (
-                        <div className="text-right">
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${bandClass(stats[s.id].band)}`}>
-                            {stats[s.id].band === 'unrated' ? '— unrated' : `${stats[s.id].avg_score} · ${stats[s.id].band}`}
-                          </span>
-                          <p className="text-[10px] text-white/30 mt-1">{stats[s.id].completed_count} done</p>
+                    {userRole === 'leader' && stats[s.id] && (() => {
+                      const st = stats[s.id]
+                      const color = st.band === 'high' ? '#10b981' : st.band === 'avg' ? '#f59e0b' : st.band === 'low' ? '#ef4444' : 'rgba(255,255,255,0.25)'
+                      return (
+                        <div className="flex items-center gap-1.5 shrink-0" title={`Rating: ${st.band} · ${st.completed_count} completed`}>
+                          <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} />
+                          <span className="text-xs text-white/45 tabular-nums w-7">{st.band === 'unrated' ? '—' : st.avg_score}</span>
                         </div>
-                      )}
-                      <div className="flex gap-2 flex-wrap justify-end">
-                        <Link href={`/students/${s.id}`}
-                          className="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-white/60 hover:text-white transition">
-                          See profile
-                        </Link>
-                        {userRole === 'leader' && (
+                      )
+                    })()}
+
+                    {wipMeter(s.id)}
+
+                    {userRole === 'leader' && (
+                      <div className="relative shrink-0">
+                        <button onClick={() => setMenuOpen(menuOpen === s.id ? null : s.id)}
+                          className="w-8 h-8 rounded-lg text-white/40 hover:text-white hover:bg-white/10 transition flex items-center justify-center text-lg leading-none">⋯</button>
+                        {menuOpen === s.id && (
                           <>
-                            <button onClick={() => editingStudent === s.id ? setEditingStudent(null) : startEditing(s)}
-                              className="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-white/60 hover:text-white transition">
-                              {editingStudent === s.id ? 'Cancel' : 'Edit skills'}
-                            </button>
-                            {(() => {
-                              const acct = accountFor(s)
-                              if (!acct) return null   // no login account to promote/demote
-                              return acct.role === 'leader' ? (
-                                <button onClick={() => changeRole(acct, 'student')}
-                                  className="text-xs px-3 py-1.5 rounded-lg border border-amber-500/40 text-amber-400 hover:bg-amber-500/10 transition">
-                                  Revoke leader
-                                </button>
-                              ) : (
-                                <button onClick={() => changeRole(acct, 'leader')}
-                                  className="text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 transition">
-                                  Make leader
-                                </button>
-                              )
-                            })()}
-                            {s.group_label && (
-                              <button onClick={() => removeFromGroup(s.id, s.name, s.group_label)}
-                                className="text-xs px-3 py-1.5 rounded-lg border border-amber-500/30 text-amber-400 hover:bg-amber-500/10 transition">
-                                Remove from group
-                              </button>
-                            )}
-                            <button onClick={() => removeStudent(s.id, s.name)}
-                              className="text-xs px-3 py-1.5 rounded-lg border border-red-500/40 text-red-400 hover:bg-red-500/10 transition">
-                              Remove from project
-                            </button>
+                            <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(null)} />
+                            <div className="absolute right-0 top-full mt-1 z-20 w-44 bg-[#202020] border border-white/10 rounded-lg shadow-xl py-1">
+                              <Link href={`/students/${s.id}`} className="block px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 transition">See profile</Link>
+                              <button onClick={() => { setMenuOpen(null); startEditing(s) }} className="block w-full text-left px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 transition">Edit skills &amp; photo</button>
+                              {(() => {
+                                const acct = accountFor(s)
+                                if (!acct) return null
+                                return acct.role === 'leader'
+                                  ? <button onClick={() => { setMenuOpen(null); changeRole(acct, 'student') }} className="block w-full text-left px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 transition">Revoke leader</button>
+                                  : <button onClick={() => { setMenuOpen(null); changeRole(acct, 'leader') }} className="block w-full text-left px-3 py-1.5 text-xs text-white/70 hover:bg-white/10 transition">Make leader</button>
+                              })()}
+                              {s.group_label && <button onClick={() => { setMenuOpen(null); removeFromGroup(s.id, s.name, s.group_label) }} className="block w-full text-left px-3 py-1.5 text-xs text-amber-400/80 hover:bg-white/10 transition">Remove from group</button>}
+                              <div className="my-1 h-px bg-white/10" />
+                              <button onClick={() => { setMenuOpen(null); removeStudent(s.id, s.name) }} className="block w-full text-left px-3 py-1.5 text-xs text-red-400/80 hover:bg-white/10 transition">Remove from project</button>
+                            </div>
                           </>
                         )}
                       </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Edit panel — leader only */}
                   {editingStudent === s.id && userRole === 'leader' && (
-                    <div className="mt-3 pt-3 border-t border-white/10">
+                    <div className="mx-3 mb-3 pt-3 border-t border-white/10">
                       <div className="flex items-center justify-between mb-3">
                         <p className="text-xs text-white/40">Edit skills for {s.name}</p>
                         <label className="text-xs px-3 py-1.5 rounded-lg border border-white/20 text-white/60 hover:text-white cursor-pointer transition">
