@@ -604,7 +604,7 @@ export default function Students() {
           ) : (
             <div className="flex flex-col gap-3">
               {shownStudents.map(s => (
-                <div key={s.id} className="rounded-lg border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02] transition">
+                <div key={s.id} className={`rounded-lg border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02] transition ${menuOpen === s.id ? 'relative z-30' : ''}`}>
                   <div className="flex items-center gap-4 p-4">
                     {s.avatar_url ? (
                       <img src={s.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />

@@ -506,9 +506,9 @@ const updateTaskStatus = async (id: string, status: string) => {
             <p className="text-white/40 text-sm">{tasks.length === 0 ? 'No tasks yet.' : 'No tasks in this group.'}</p>
           ) : (
             shownTasks.map(task => (
-              <div key={task.id} className="bg-[#161616] border border-white/[0.06] hover:border-white/[0.12] rounded-xl overflow-hidden transition">
+              <div key={task.id} className={`bg-[#161616] border border-white/[0.06] hover:border-white/[0.12] rounded-xl transition ${taskMenuOpen === task.id ? 'relative z-30' : 'overflow-hidden'}`}>
                 <div
-                  className="flex items-center gap-3.5 p-4 cursor-pointer hover:bg-white/[0.02] transition"
+                  className={`flex items-center gap-3.5 p-4 cursor-pointer hover:bg-white/[0.02] transition ${expandedTask === task.id ? 'rounded-t-xl' : 'rounded-xl'}`}
                   onClick={() => loadRecommendations(task.id)}>
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: severityDot(task.severity) }} title={`${task.severity || 'Low'} severity`} />
                   <div className="w-64 shrink-0 min-w-0">
