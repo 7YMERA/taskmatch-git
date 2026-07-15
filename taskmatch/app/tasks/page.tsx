@@ -198,10 +198,6 @@ const updateTaskStatus = async (id: string, status: string) => {
   // Calm indicators — small dots carry the signal instead of filled pills.
   const severityDot = (s: string) => s === 'Critical' ? '#ef4444' : s === 'Medium' ? '#f59e0b' : 'rgba(255,255,255,0.35)'
   const statusDot = (s: string) => s === 'New' ? '#eab308' : s === 'In Progress' ? '#22c55e' : s === 'Completed' ? '#3b82f6' : 'rgba(255,255,255,0.3)'
-  const taskSkillNames = (t: any) => {
-    const names = (t.task_skills || []).map((ts: any) => ts.skills?.skill_name).filter(Boolean)
-    return names.slice(0, 3).join(' · ') + (names.length > 3 ? ` +${names.length - 3}` : '')
-  }
 
   // SLA-style states. Delayed = breached & not done (active). Closed = breached
   // & not done past the grace window (auto-locked). Late = delivered after due.
@@ -515,16 +511,27 @@ const updateTaskStatus = async (id: string, status: string) => {
                   className="flex items-center gap-3.5 p-4 cursor-pointer hover:bg-white/[0.02] transition"
                   onClick={() => loadRecommendations(task.id)}>
                   <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: severityDot(task.severity) }} title={`${task.severity || 'Low'} severity`} />
-                  <div className="flex-1 min-w-0">
+                  <div className="w-64 shrink-0 min-w-0">
                     <div className="flex items-center gap-2">
                       {task.group_label && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: groupColor(task.group_label) }} title={task.group_label} />}
                       <span className="text-sm font-medium text-white truncate">{task.description}</span>
                     </div>
                     <p className="text-xs text-white/40 truncate mt-0.5">
-                      {task.committed_hours != null && <>{task.committed_hours}h</>}
-                      {(task.start_date || task.due_date) && <>{task.committed_hours != null ? ' · ' : ''}{task.start_date || '…'} → {task.due_date || '…'}</>}
-                      {task.task_skills?.length > 0 && <span className="text-white/30"> · {taskSkillNames(task)}</span>}
+                      {task.committed_hours != null ? `${task.committed_hours}h committed` : 'no hours set'}
+                      {(task.start_date || task.due_date) && <> · {task.start_date || '…'} → {task.due_date || '…'}</>}
                     </p>
+                  </div>
+
+                  {/* Middle column — required skills as quiet chips (fills the row) */}
+                  <div className="flex-1 min-w-0 flex items-center gap-1.5 flex-wrap">
+                    {task.task_skills?.length > 0 ? (
+                      <>
+                        {task.task_skills.slice(0, 4).map((ts: any) => (
+                          <span key={ts.skill_id} className="text-xs px-2 py-0.5 rounded-md border border-white/[0.08] text-white/55">{ts.skills?.skill_name}</span>
+                        ))}
+                        {task.task_skills.length > 4 && <span className="text-[11px] text-white/30">+{task.task_skills.length - 4}</span>}
+                      </>
+                    ) : <span className="text-xs text-white/25">No skills required</span>}
                   </div>
 
                   <div className="flex items-center gap-1.5 shrink-0" title={`Status: ${task.status}`}>

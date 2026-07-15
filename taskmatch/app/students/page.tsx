@@ -276,12 +276,6 @@ export default function Students() {
   // Accounts that exist but aren't on the roster yet — the pool for "assign existing account".
   const unassignedAccounts = accounts.filter(a => !a.on_roster)
 
-  // Skills as quiet text: first few names, then a +N counter (full list on the profile).
-  const skillNames = (s: any) => {
-    const names = (s.student_skills || []).map((ss: any) => ss.skills?.skill_name).filter(Boolean)
-    return names.slice(0, 3).join(' · ') + (names.length > 3 ? ` +${names.length - 3}` : '')
-  }
-
   // WIP as a small slot meter, coloured only when it matters (amber on the last slot, red at limit).
   const wipMeter = (sid: string) => {
     const w = wip[sid]
@@ -611,15 +605,15 @@ export default function Students() {
             <div className="flex flex-col gap-3">
               {shownStudents.map(s => (
                 <div key={s.id} className="rounded-lg border border-white/[0.06] hover:border-white/[0.12] hover:bg-white/[0.02] transition">
-                  <div className="flex items-center gap-3.5 p-3">
+                  <div className="flex items-center gap-4 p-4">
                     {s.avatar_url ? (
-                      <img src={s.avatar_url} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                      <img src={s.avatar_url} alt="" className="w-12 h-12 rounded-full object-cover shrink-0" />
                     ) : (
-                      <div className="w-10 h-10 rounded-full bg-white/10 text-white/50 flex items-center justify-center text-sm font-medium shrink-0">
+                      <div className="w-12 h-12 rounded-full bg-white/10 text-white/50 flex items-center justify-center text-base font-medium shrink-0">
                         {initials(s.name)}
                       </div>
                     )}
-                    <div className="flex-1 min-w-0">
+                    <div className="w-52 shrink-0 min-w-0">
                       <div className="flex items-center gap-2">
                         {s.group_label && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: groupColor(s.group_label) }} title={s.group_label} />}
                         <Link href={`/students/${s.id}`} className="text-sm font-medium text-white hover:underline truncate">{s.name}</Link>
@@ -630,12 +624,25 @@ export default function Students() {
                           return null
                         })()}
                       </div>
-                      <p className="text-xs text-white/40 truncate mt-0.5">
-                        {s.matric} · {s.programme} · Year {s.year}
-                        {(s.student_skills || []).length > 0
-                          ? <span className="text-white/30"> · {skillNames(s)}</span>
-                          : <span className="text-white/25"> · no skills</span>}
-                      </p>
+                      <p className="text-xs text-white/40 truncate mt-0.5">{s.matric} · {s.programme} · Year {s.year}</p>
+                    </div>
+
+                    {/* Middle column — skills + what they're working on now (fills the row) */}
+                    <div className="flex-1 min-w-0 flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        {(s.student_skills || []).length === 0 ? (
+                          <span className="text-xs text-white/25">No skills declared</span>
+                        ) : (s.student_skills || []).slice(0, 5).map((ss: any) => (
+                          <span key={ss.skill_id} className="text-xs px-2 py-0.5 rounded-md border border-white/[0.08] text-white/55">{ss.skills?.skill_name}</span>
+                        ))}
+                        {(s.student_skills || []).length > 5 && <span className="text-[11px] text-white/30">+{(s.student_skills || []).length - 5}</span>}
+                      </div>
+                      {(() => {
+                        const at = wip[s.id]?.active_tasks || []
+                        return at.length === 0
+                          ? <span className="text-[11px] text-white/30 flex items-center gap-1"><span className="w-1 h-1 rounded-full bg-emerald-400/60" /> Available · no active tasks</span>
+                          : <span className="text-[11px] text-white/40 truncate">On: {at.map((t: any) => t.description).filter(Boolean).join(', ')}</span>
+                      })()}
                     </div>
 
                     {userRole === 'leader' && stats[s.id] && (() => {
