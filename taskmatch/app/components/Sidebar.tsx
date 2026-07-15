@@ -42,8 +42,24 @@ export default function Sidebar() {
 
   return (
     <aside className="w-52 bg-[#1a1a1a] border-r border-white/10 p-4 flex flex-col gap-1 shrink-0 sticky top-0 h-screen overflow-y-auto self-start">
-      <div className="text-base font-semibold text-white py-2 mb-3 border-b border-white/10">
-        TaskMatch
+      <div className="flex flex-col items-center gap-2 py-3 mb-3 border-b border-white/10">
+        <svg width="46" height="46" viewBox="0 0 42 42" fill="none" aria-label="TaskMatch logo"
+          className="drop-shadow-[0_2px_10px_rgba(99,102,241,0.4)]">
+          <defs>
+            <linearGradient id="tmLogo" x1="4" y1="4" x2="38" y2="38" gradientUnits="userSpaceOnUse">
+              <stop stopColor="#6366f1" />
+              <stop offset="0.5" stopColor="#8b5cf6" />
+              <stop offset="1" stopColor="#34d399" />
+            </linearGradient>
+          </defs>
+          <rect x="3" y="3" width="36" height="36" rx="11" fill="url(#tmLogo)" />
+          <line x1="15.5" y1="15.5" x2="26.5" y2="26.5" stroke="#fff" strokeWidth="2.6" strokeLinecap="round" opacity="0.9" />
+          <circle cx="15" cy="15" r="3.6" fill="#fff" />
+          <rect x="22.5" y="22.5" width="7" height="7" rx="2.2" fill="#fff" />
+        </svg>
+        <span className="text-lg font-bold tracking-tight bg-gradient-to-r from-indigo-400 via-violet-400 to-emerald-400 bg-clip-text text-transparent">
+          TaskMatch
+        </span>
       </div>
       {nav.map(item => (
         <Link key={item.href} href={item.href}
