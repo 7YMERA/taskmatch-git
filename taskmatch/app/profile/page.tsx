@@ -29,6 +29,7 @@ export default function Profile() {
   const [notFound, setNotFound] = useState(false)
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [picking, setPicking] = useState<string | null>(null)
 
   useEffect(() => { init() }, [])
 
@@ -100,6 +101,27 @@ export default function Profile() {
     } catch (err: any) {
       alert(`❌ ${err.response?.data?.detail || 'Failed to complete'}`)
     }
+  }
+
+  // Bearer header so the API can verify who's picking the task up.
+  const authHeader = async () => {
+    const { data: { session } } = await supabase.auth.getSession()
+    return session ? { Authorization: `Bearer ${session.access_token}` } : {}
+  }
+
+  // Self-assign: the API resolves the student from this token, so it can only ever add
+  // the task to the caller's own account.
+  const pickTask = async (taskId: string, desc: string) => {
+    if (!confirm(`Pick up "${desc}"?\n\nIt'll be added to your tasks — start its timer from My Tasks when you begin.`)) return
+    setPicking(taskId)
+    try {
+      const headers = await authHeader()
+      await axios.post(`${API}/self-assign`, { task_id: taskId }, { headers })
+      if (student) await loadTasks(student.id)
+      alert(`✅ "${desc}" added to your tasks.`)
+    } catch (err: any) {
+      alert(`❌ ${err.response?.data?.detail || 'Could not pick up this task. The server may be waking up — try again.'}`)
+    } finally { setPicking(null) }
   }
 
   const uploadAvatar = async (file?: File) => {
@@ -357,8 +379,11 @@ export default function Profile() {
 
             {/* Recommended tasks for me */}
             <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5 mt-6">
-              <p className="text-sm font-medium text-white mb-1">Suggested for you</p>
-              <p className="text-xs text-white/40 mb-4">Tasks the matching algorithm considered you for — by skill fit or as a growth opportunity. Your team leader makes the final call.</p>
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-sm font-medium text-white">Suggested for you</p>
+                {wip >= 3 && <span className="text-[11px] text-amber-400">At workload limit ({wip}/3)</span>}
+              </div>
+              <p className="text-xs text-white/40 mb-4">Tasks the matcher considered you for — by skill fit or as a growth opportunity. Pick one up to add it to your own list{wip >= 3 ? ', once you finish an active task' : ''}, or your leader can assign you.</p>
               {recommended.qualified.length === 0 && recommended.growth.length === 0 ? (
                 <p className="text-xs text-white/40">No suggested tasks right now.</p>
               ) : (
@@ -379,6 +404,13 @@ export default function Profile() {
                           {r.severity ? ` · ${r.severity}` : ''}
                         </p>
                       </div>
+                      <button
+                        onClick={() => pickTask(r.task_id, r.description)}
+                        disabled={picking === r.task_id || wip >= 3}
+                        title={wip >= 3 ? 'You are at your workload limit (3 active tasks)' : 'Add this task to your own list'}
+                        className="text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 transition disabled:opacity-30 disabled:hover:bg-transparent shrink-0">
+                        {picking === r.task_id ? 'Adding…' : 'Pick this task'}
+                      </button>
                       <span className={`text-xs px-2 py-1 rounded-full ${statusColor(r.status)}`}>{r.status}</span>
                     </div>
                   ))}

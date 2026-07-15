@@ -315,13 +315,9 @@ def recommend(task_id: str):
         "wip_limit": WIP_LIMIT,
     }
 
-@app.post("/assign")
-def assign(body: dict):
-    task_id = body.get("task_id")
-    student_id = body.get("student_id")
-    actor_email = body.get("actor_email")
-    actor_role = body.get("actor_role")
-
+def _create_assignment(task_id, student_id, actor_email, actor_role, self_assigned=False):
+    """Shared assignment logic used by both leader-assign and student self-assign.
+    Enforces: closed-task lock, one-assignment-per-(task,student), and the WIP limit."""
     if not task_id or not student_id:
         raise HTTPException(status_code=400, detail="task_id and student_id required")
 
@@ -333,42 +329,34 @@ def assign(body: dict):
     # Guard against duplicate assignment (e.g. a double-click) — one assignment per (task, student).
     existing = (
         supabase.table("assignments")
-        .select("id")
-        .eq("task_id", task_id)
-        .eq("student_id", student_id)
-        .execute()
+        .select("id").eq("task_id", task_id).eq("student_id", student_id).execute()
     ).data
     if existing:
-        raise HTTPException(status_code=409, detail="This student is already assigned to this task.")
+        raise HTTPException(status_code=409,
+                            detail="You're already on this task." if self_assigned else "This student is already assigned to this task.")
 
     # WIP = everything on their plate that isn't done (assigned OR in progress).
     active = (
         supabase.table("assignments")
-        .select("id")
-        .eq("student_id", student_id)
-        .in_("status", ["Assigned", "In Progress"])
-        .execute()
+        .select("id").eq("student_id", student_id).in_("status", ["Assigned", "In Progress"]).execute()
     ).data
-
     if len(active) >= WIP_LIMIT:
-        raise HTTPException(status_code=400, detail="Student has reached WIP limit")
+        raise HTTPException(status_code=400,
+                            detail=(f"You've reached your workload limit of {WIP_LIMIT} active tasks — finish one before taking another."
+                                    if self_assigned else "Student has reached WIP limit"))
 
     # Create the assignment in the 'Assigned' state — the clock does NOT run yet.
     # The assignee starts it themselves (/start), which is when timing begins.
     try:
         result = (
             supabase.table("assignments")
-            .insert({
-                "task_id": task_id,
-                "student_id": student_id,
-                "assigned_date": str(date.today()),
-                "status": "Assigned"
-            })
+            .insert({"task_id": task_id, "student_id": student_id,
+                     "assigned_date": str(date.today()), "status": "Assigned"})
             .execute()
         ).data
     except Exception as e:
         if "duplicate" in str(e).lower() or "23505" in str(e):
-            raise HTTPException(status_code=409, detail="This student is already assigned to this task.")
+            raise HTTPException(status_code=409, detail="You're already on this task." if self_assigned else "This student is already assigned to this task.")
         raise
     # Task stays 'New' until an assignee actually starts work.
 
@@ -379,15 +367,39 @@ def assign(body: dict):
     task_desc = task[0]["description"] if task else task_id
 
     log_activity(
-        action="assignment.assigned",
+        action="assignment.self_assigned" if self_assigned else "assignment.assigned",
         entity_type="assignment",
         entity_id=result[0]["id"] if result else None,
-        summary=f"{student_name} assigned to task '{task_desc}'",
+        summary=f"{student_name} {'picked up' if self_assigned else 'assigned to'} task '{task_desc}'",
         actor_email=actor_email, actor_role=actor_role,
-        details={"task_id": task_id, "student_id": student_id},
+        details={"task_id": task_id, "student_id": student_id, "self_assigned": self_assigned},
     )
-
     return {"success": True, "assignment": result}
+
+
+@app.post("/assign")
+def assign(body: dict):
+    """Leader assigns a student to a task."""
+    return _create_assignment(body.get("task_id"), body.get("student_id"),
+                              body.get("actor_email"), body.get("actor_role"))
+
+
+@app.post("/self-assign")
+def self_assign(body: dict, authorization: str = Header(None)):
+    """A student picks up a task for themselves. The student is resolved from the caller's
+    own verified login token — never from the request body — so this can only ever assign
+    the caller to their own account, never anyone else."""
+    user = require_user(authorization)
+    role = (user.user_metadata or {}).get("role", "student")
+    task_id = body.get("task_id")
+    if not task_id:
+        raise HTTPException(status_code=400, detail="task_id required")
+
+    srows = supabase.table("students").select("id, name").eq("email", user.email).execute().data
+    if not srows:
+        raise HTTPException(status_code=400,
+                            detail="No student record is linked to your account. Ask your leader to add you on the Students page.")
+    return _create_assignment(task_id, srows[0]["id"], actor_email=user.email, actor_role=role, self_assigned=True)
 
 
 @app.post("/start")
