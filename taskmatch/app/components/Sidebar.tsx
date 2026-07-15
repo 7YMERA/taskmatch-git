@@ -34,9 +34,9 @@ export default function Sidebar() {
 
   const nav = [
     { label: 'Dashboard', href: '/dashboard' },
+    { label: 'Students', href: '/students' },
     { label: 'Tasks', href: '/tasks' },
     { label: 'My Tasks', href: '/my-tasks' },
-    { label: 'Students', href: '/students' },
     ...(role === 'leader' ? [{ label: 'Logs', href: '/logs' }] : []),
   ]
 
