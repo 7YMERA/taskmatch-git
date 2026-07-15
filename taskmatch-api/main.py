@@ -312,6 +312,7 @@ def recommend(task_id: str):
         "suggested_pair": suggested_pair,
         "assigned_count": len(current),
         "min_team_size": 2,
+        "wip_limit": WIP_LIMIT,
     }
 
 @app.post("/assign")
@@ -605,6 +606,46 @@ def student_stats():
         st = stats.get(s["id"], {"avg_score": None, "completed_count": 0, "band": "unrated"})
         out.append({"student_id": s["id"], "name": s["name"], **st})
     return {"stats": out}
+
+
+@app.get("/wip")
+def wip_status():
+    """Per-student work-in-progress load: how many active (Assigned or In Progress)
+    assignments each student holds, against the shared WIP limit. Same definition the
+    matcher and /assign use, so the badges everywhere agree. Powers the WIP badges on the
+    Students page, the task-assignment view, and the dashboard WIP panel."""
+    active = (
+        supabase.table("assignments")
+        .select("student_id, task_id, status, tasks(description)")
+        .in_("status", ["Assigned", "In Progress"])
+        .execute()
+    ).data
+
+    by_student = defaultdict(list)
+    for a in active:
+        by_student[a["student_id"]].append({
+            "task_id": a["task_id"],
+            "status": a["status"],
+            "description": (a.get("tasks") or {}).get("description"),
+        })
+
+    students = (supabase.table("students").select("id, name").execute()).data
+    out = []
+    for s in students:
+        tasks = by_student.get(s["id"], [])
+        wip = len(tasks)
+        out.append({
+            "student_id": s["id"],
+            "name": s["name"],
+            "wip": wip,
+            "over_wip": wip >= WIP_LIMIT,
+            "remaining": max(0, WIP_LIMIT - wip),
+            "active_tasks": tasks,
+        })
+    out.sort(key=lambda x: (-x["wip"], x["name"] or ""))
+    at_limit = sum(1 for x in out if x["wip"] >= WIP_LIMIT)
+    working = sum(1 for x in out if x["wip"] > 0)
+    return {"wip_limit": WIP_LIMIT, "at_limit": at_limit, "working": working, "students": out}
 
 
 # ─── Reverse matching: recommend tasks for a student ───────────

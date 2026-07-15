@@ -68,7 +68,7 @@ export default function TaskDetail() {
     try {
       const res = await axios.get(`${API}/recommend/${id}`)
       setRecs(res.data.recommendations)
-      setMeta({ suggested_pair: res.data.suggested_pair, assigned_count: res.data.assigned_count })
+      setMeta({ suggested_pair: res.data.suggested_pair, assigned_count: res.data.assigned_count, wip_limit: res.data.wip_limit ?? 3 })
     } catch { setRecs([]) }
   }
 
@@ -168,6 +168,16 @@ export default function TaskDetail() {
   const initials = (n: string) => n?.split(' ').map(x => x[0]).join('').slice(0, 2).toUpperCase()
   const assignedIds = new Set(assignees.map(a => a.student_id))
 
+  // WIP badge: green with room, amber on the last slot, red when at/over the limit.
+  const wipLimit = meta?.wip_limit ?? 3
+  const wipChip = (wip: number) => {
+    const cls = wip >= wipLimit ? 'bg-red-500/20 text-red-400'
+      : wip >= wipLimit - 1 ? 'bg-amber-500/20 text-amber-400'
+        : 'bg-emerald-500/20 text-emerald-400'
+    return <span title={`${wip} active task${wip === 1 ? '' : 's'} out of a limit of ${wipLimit}`}
+      className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>WIP {wip}/{wipLimit}</span>
+  }
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
@@ -227,7 +237,10 @@ export default function TaskDetail() {
                       <div key={a.id} className="flex items-center gap-3 bg-white/5 rounded-lg p-3">
                         <div className="w-8 h-8 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs font-semibold shrink-0">{initials(a.students?.name)}</div>
                         <div className="flex-1">
-                          <Link href={`/students/${a.student_id}`} className="text-sm text-white hover:underline">{a.students?.name}</Link>
+                          <span className="flex items-center gap-2 flex-wrap">
+                            <Link href={`/students/${a.student_id}`} className="text-sm text-white hover:underline">{a.students?.name}</Link>
+                            {recs.length > 0 && wipChip(recs.find(r => r.student_id === a.student_id)?.wip ?? 0)}
+                          </span>
                           <p className="text-xs text-white/40">
                             {a.status}
                             {a.score != null ? ` · score ${a.score}` : ''}
@@ -274,7 +287,8 @@ export default function TaskDetail() {
                         <p className="text-sm text-white flex items-center gap-2 flex-wrap">
                           {r.name}
                           {bandChip(r.band, r.avg_score)}
-                          {!r.qualified && <span title={r.over_wip ? 'At their work-in-progress limit' : 'Below the required skill level — can still be assigned as a growth pairing'} className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">{r.over_wip ? 'WIP full' : 'below min'}</span>}
+                          {wipChip(r.wip)}
+                          {!r.qualified && !r.over_wip && <span title="Below the required skill level — can still be assigned as a growth pairing" className="text-xs px-2 py-0.5 rounded-full bg-red-500/20 text-red-400">below min</span>}
                         </p>
                         <p className="text-xs text-white/30 italic mt-0.5">{r.justification}</p>
                       </div>

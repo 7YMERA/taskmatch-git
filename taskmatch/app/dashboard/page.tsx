@@ -22,6 +22,7 @@ export default function Dashboard() {
   const [tasks, setTasks] = useState<any[]>([])
   const [statsList, setStatsList] = useState<any[]>([])
   const [assignments, setAssignments] = useState<any[]>([])
+  const [wipData, setWipData] = useState<any>({ wip_limit: 3, at_limit: 0, working: 0, students: [] })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -44,6 +45,10 @@ export default function Dashboard() {
       const res = await axios.get(`${API}/student-stats`)
       setStatsList(res.data.stats)
     } catch { /* backend down — scores just won't show */ }
+    try {
+      const wres = await axios.get(`${API}/wip`)
+      setWipData(wres.data)
+    } catch { /* backend down — WIP panel just won't show */ }
     setLoading(false)
   }
 
@@ -145,6 +150,11 @@ export default function Dashboard() {
   ]
   const bandCounts = BANDS.map(b => ({ ...b, count: statsList.filter(s => s.band === b.band).length }))
   const bandMax = Math.max(1, ...bandCounts.map(b => b.count))
+
+  // WIP load — slot bars per student, coloured by how close they are to the limit.
+  const wipLimit = wipData.wip_limit ?? 3
+  const wipLoaded = (wipData.students || []).filter((s: any) => s.wip > 0)
+  const wipColor = (w: number) => w >= wipLimit ? '#ef4444' : w >= wipLimit - 1 ? '#f59e0b' : '#10b981'
 
   return (
     <div className="flex min-h-screen">
@@ -261,6 +271,39 @@ export default function Dashboard() {
                 </div>
               )}
           </div>
+        </div>
+
+        {/* Work in progress (WIP) tracker */}
+        <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5 mb-6">
+          <div className="flex items-center justify-between mb-1">
+            <p className="text-sm font-medium text-white">Work in progress (WIP)</p>
+            <span className="text-xs text-white/40">Limit {wipLimit} active tasks / student</span>
+          </div>
+          <p className="text-xs text-white/40 mb-4">
+            {loading ? 'Loading…' : `${wipData.at_limit} at limit · ${wipData.working} working · ${Math.max(0, totalStudents - wipData.working)} idle`}
+          </p>
+          {loading ? <p className="text-white/40 text-sm">Loading…</p>
+            : wipLoaded.length === 0 ? <p className="text-white/40 text-sm">No one has an active task right now.</p>
+            : (
+              <div className="grid grid-cols-2 gap-x-8 gap-y-2.5">
+                {wipLoaded.map((s: any) => (
+                  <Link key={s.student_id} href={`/students/${s.student_id}`}
+                    className="flex items-center gap-3 hover:bg-white/5 -mx-2 px-2 py-1 rounded transition"
+                    title={s.active_tasks?.map((t: any) => t.description).filter(Boolean).join(' · ')}>
+                    <span className="text-xs text-white/70 w-32 truncate shrink-0">{s.name}</span>
+                    <div className="flex-1 flex gap-1">
+                      {Array.from({ length: wipLimit }).map((_, i) => (
+                        <div key={i} className="h-3 flex-1 rounded-sm" style={{ backgroundColor: i < s.wip ? wipColor(s.wip) : 'rgba(255,255,255,0.06)' }} />
+                      ))}
+                    </div>
+                    <span className="text-xs tabular-nums w-9 text-right" style={{ color: wipColor(s.wip) }}>{s.wip}/{wipLimit}</span>
+                  </Link>
+                ))}
+              </div>
+            )}
+          {!loading && wipData.at_limit > 0 && (
+            <p className="text-[11px] text-red-400/70 mt-3">⚠ {wipData.at_limit} student{wipData.at_limit === 1 ? '' : 's'} at the WIP limit — they can&apos;t take new tasks until they finish something.</p>
+          )}
         </div>
 
         {/* Fastest / slowest task */}

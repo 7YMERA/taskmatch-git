@@ -42,6 +42,8 @@ export default function Students() {
   const [pickedAccountId, setPickedAccountId] = useState('')
   const [selectedSkills, setSelectedSkills] = useState<{ skill_id: string, proficiency: number }[]>([])
   const [stats, setStats] = useState<{ [student_id: string]: any }>({})
+  const [wip, setWip] = useState<{ [student_id: string]: any }>({})
+  const [wipLimit, setWipLimit] = useState(3)
   const [groupFilter, setGroupFilter] = useState('all')
   const [groups, setGroups] = useState<any[]>([])
   const [showGroupForm, setShowGroupForm] = useState(false)
@@ -59,7 +61,18 @@ export default function Students() {
     fetchSkills()
     fetchStats()
     fetchGroups()
+    fetchWip()
   }, [])
+
+  const fetchWip = async () => {
+    try {
+      const res = await axios.get(`${API}/wip`)
+      const map: { [id: string]: any } = {}
+      for (const s of res.data.students) map[s.student_id] = s
+      setWip(map)
+      setWipLimit(res.data.wip_limit ?? 3)
+    } catch { /* backend may be down; WIP just won't show */ }
+  }
 
   // Bearer header for the leader-gated admin endpoints on the API.
   const authHeader = async () => {
@@ -269,6 +282,17 @@ export default function Students() {
   const accountFor = (s: any) => accountByEmail[(s.email || '').toLowerCase()]
   // Accounts that exist but aren't on the roster yet — the pool for "assign existing account".
   const unassignedAccounts = accounts.filter(a => !a.on_roster)
+
+  // WIP badge per student: green with room, amber on the last slot, red at/over the limit.
+  const wipChip = (sid: string) => {
+    const w = wip[sid]
+    if (!w) return null
+    const cls = w.wip >= wipLimit ? 'bg-red-500/20 text-red-400'
+      : w.wip >= wipLimit - 1 ? 'bg-amber-500/20 text-amber-400'
+        : 'bg-emerald-500/20 text-emerald-400'
+    return <span title={`${w.wip} active task${w.wip === 1 ? '' : 's'} out of a limit of ${wipLimit}`}
+      className={`text-xs px-2 py-0.5 rounded-full ${cls}`}>WIP {w.wip}/{wipLimit}</span>
+  }
 
   // Cluster ordering: rank groups by how recently they were created (newest first),
   // ungrouped students fall to the bottom. Lower rank = higher up.
@@ -601,6 +625,7 @@ export default function Students() {
                               {s.group_label}
                             </span>
                           )}
+                          {wipChip(s.id)}
                           {userRole === 'leader' && (() => {
                             const acct = accountFor(s)
                             if (!acct) return (
