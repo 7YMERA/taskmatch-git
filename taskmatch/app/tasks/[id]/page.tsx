@@ -272,6 +272,7 @@ export default function TaskDetail() {
               {/* Recommendations */}
               <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
                 <p className="text-sm font-medium text-white mb-1">Recommended</p>
+                <p className="text-[11px] text-white/35 mb-2">Ranked by: meets all required skills first → best skill match → least busy (WIP). The performance band is shown for context, but it doesn&apos;t set the order — a strong skill-match can rank above a higher performer.</p>
                 {isClosed(task) && (
                   <div className="my-2 rounded-lg border border-white/15 bg-white/5 p-2.5">
                     <p className="text-xs text-white/70">🔒 This task is closed (SLA window expired), so assignments are disabled. This is about the task&apos;s deadline — not any student&apos;s skill level.</p>

@@ -604,7 +604,8 @@ const updateTaskStatus = async (id: string, status: string) => {
                       <p className="text-white/30 text-xs italic">{isClosed(task) ? 'Task closed — assignment locked.' : 'Task completed.'}</p>
                     ) : (
                     <>
-                    <p className="text-xs text-white/40 mb-3">{task.status === 'New' ? 'Recommended students' : 'Recommended to add'}</p>
+                    <p className="text-xs text-white/40 mb-1">{task.status === 'New' ? 'Recommended students' : 'Recommended to add'}</p>
+                    <p className="text-[11px] text-white/35 mb-3">Ranked by: meets all required skills first → best skill match → least busy (WIP), not by performance band. Already-assigned students are hidden; the rest continue on the next page.</p>
                     {!recommendations[task.id] ? (
                       <p className="text-white/40 text-xs">Loading...</p>
                     ) : (() => {
