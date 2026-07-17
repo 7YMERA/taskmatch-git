@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { logActivity } from '../lib/log'
 import Sidebar from '../components/Sidebar'
+import { toast, confirmDialog } from '../lib/ui'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -88,14 +89,14 @@ export default function Students() {
     const msg = promoting
       ? `Make ${acct.email} a leader?\n\nLeaders can add/remove students, manage tasks, change roles, and view the activity log.`
       : `Revoke leader from ${acct.email}?\n\nThey become a regular student and lose access to management tools.`
-    if (!confirm(msg)) return
+    if (!(await confirmDialog({ message: msg, confirmLabel: promoting ? 'Make leader' : 'Revoke', danger: !promoting }))) return
     try {
       const headers = await authHeader()
       await axios.post(`${API}/set-role`, { user_id: acct.id, role: newRole }, { headers })
       await fetchAccounts()
-      alert(`✅ ${acct.email} is now a ${newRole}.`)
+      toast(`${acct.email} is now a ${newRole}.`, 'success')
     } catch (e: any) {
-      alert(e?.response?.data?.detail || 'Could not change the role. Check the API is running and configured.')
+      toast(e?.response?.data?.detail || 'Could not change the role. Check the API is running and configured.', 'error')
     }
   }
 
@@ -115,13 +116,13 @@ export default function Students() {
 
   const createGroup = async () => {
     const name = groupForm.name.trim()
-    if (!name) return alert('Enter a group name')
+    if (!name) return toast('Enter a group name', 'error')
     // Reuse an existing group (incl. one created on the Tasks tab) instead of erroring —
     // this is what lets you ADD members to an existing group.
     const existing = groups.find(g => g.name === name)
     if (!existing) {
       const { error } = await supabase.from('groups').insert({ name, color: groupForm.color, created_by: userEmail })
-      if (error && !error.message.toLowerCase().includes('duplicate')) return alert(error.message)
+      if (error && !error.message.toLowerCase().includes('duplicate')) return toast(error.message, 'error')
     }
     if (groupForm.members.length > 0) {
       await supabase.from('students').update({ group_label: name }).in('id', groupForm.members)
@@ -141,7 +142,7 @@ export default function Students() {
   }
 
   const disbandGroup = async (name: string) => {
-    if (!confirm(`Disband "${name}"? Its members and tasks will be ungrouped — the students and tasks themselves are kept.`)) return
+    if (!(await confirmDialog({ title: `Disband "${name}"?`, message: 'Its members and tasks will be ungrouped — the students and tasks themselves are kept.', danger: true, confirmLabel: 'Disband' }))) return
     await supabase.from('students').update({ group_label: null }).eq('group_label', name)
     await supabase.from('tasks').update({ group_label: null }).eq('group_label', name)
     await supabase.from('groups').delete().eq('name', name)
@@ -180,7 +181,7 @@ export default function Students() {
   }
 
   const addStudent = async () => {
-    if (!form.name || !form.matric || !form.email) return alert('Fill in name, matric and email')
+    if (!form.name || !form.matric || !form.email) return toast('Fill in name, matric and email', 'error')
     const { data, error } = await supabase.from('students').insert({
       name: form.name,
       matric: form.matric,
@@ -189,7 +190,7 @@ export default function Students() {
       email: form.email,
       group_label: form.group_label.trim() || null
     }).select().single()
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, 'error')
     if (selectedSkills.length > 0) {
       await supabase.from('student_skills').insert(
         selectedSkills.map(s => ({ student_id: data.id, skill_id: s.skill_id, proficiency: s.proficiency }))
@@ -206,7 +207,7 @@ export default function Students() {
     setShowForm(false)
     fetchStudents()
     fetchAccounts()   // the picked account is now on the roster — refresh so it drops out of the picker
-    alert(`✅ ${form.name} added successfully!`)
+    toast(`${form.name} added successfully!`, 'success')
   }
 
   const startEditing = (student: any) => {
@@ -239,7 +240,7 @@ export default function Students() {
     const ext = (file.name.split('.').pop() || 'png').toLowerCase()
     const path = `${studentId}-${Date.now()}.${ext}`
     const { error } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, cacheControl: '3600' })
-    if (error) return alert(`Upload failed: ${error.message}`)
+    if (error) return toast(`Upload failed: ${error.message}`, 'error')
     const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path)
     await supabase.from('students').update({ avatar_url: pub.publicUrl }).eq('id', studentId)
     await logActivity({ action: 'student.photo_updated', entity_type: 'student', entity_id: studentId, summary: `Updated profile photo for ${name}` })
@@ -247,11 +248,11 @@ export default function Students() {
   }
 
   const removeFromGroup = async (id: string, name: string, group: string) => {
-    if (!confirm(
-      `Remove ${name} from the group "${group}"?\n\n` +
-      `They STAY in the project — their profile, skills and history are kept. ` +
-      `Only their group membership is cleared.`
-    )) return
+    if (!(await confirmDialog({
+      title: `Remove ${name} from "${group}"?`,
+      message: 'They stay in the project — their profile, skills and history are kept. Only their group membership is cleared.',
+      confirmLabel: 'Remove from group',
+    }))) return
     await supabase.from('students').update({ group_label: null }).eq('id', id)
     await logActivity({
       action: 'student.removed_from_group', entity_type: 'student', entity_id: id,
@@ -261,12 +262,11 @@ export default function Students() {
   }
 
   const removeStudent = async (id: string, name: string) => {
-    if (!confirm(
-      `⚠ REMOVE FROM THE WHOLE PROJECT\n\n` +
-      `You are about to permanently delete ${name} from TaskMatch entirely — ` +
-      `their profile, declared skills, and assignment history will all be removed.\n\n` +
-      `This is NOT just removing them from a group. This cannot be undone.\n\nContinue?`
-    )) return
+    if (!(await confirmDialog({
+      title: `Remove ${name} from the project?`,
+      message: `This permanently deletes ${name} from TaskMatch — their profile, declared skills, and assignment history. This is NOT just removing them from a group, and it can't be undone.`,
+      danger: true, confirmLabel: 'Remove from project',
+    }))) return
     await supabase.from('students').delete().eq('id', id)
     await logActivity({ action: 'student.removed', entity_type: 'student', entity_id: id, summary: `Removed student ${name} from the project` })
     fetchStudents()

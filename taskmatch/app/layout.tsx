@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import './globals.css'
+import { UiHost } from './lib/ui'
 
 export const metadata: Metadata = {
   title: 'TaskMatch',
@@ -15,6 +16,7 @@ export default function RootLayout({
     <html lang="en" style={{ background: '#111111' }}>
       <body style={{ background: '#111111', color: 'white', minHeight: '100vh', margin: 0 }}>
         {children}
+        <UiHost />
       </body>
     </html>
   )

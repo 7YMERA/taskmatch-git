@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { logActivity } from '../lib/log'
 import Sidebar from '../components/Sidebar'
+import { toast, confirmDialog } from '../lib/ui'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -86,7 +87,7 @@ export default function Profile() {
     const trimmed = input.trim()
     const actual_hours = trimmed === '' ? undefined : parseFloat(trimmed)
     if (actual_hours !== undefined && (isNaN(actual_hours) || actual_hours < 0)) {
-      alert('Please enter a valid number of hours.')
+      toast('Enter a valid number of hours.', 'error')
       return
     }
     try {
@@ -96,10 +97,10 @@ export default function Profile() {
         actor_email: userEmail,
         actor_role: userRole,
       })
-      alert(`✅ Completed! Your performance score for this task: ${res.data.score ?? 'n/a'}`)
+      toast(`Completed! Your performance score for this task: ${res.data.score ?? 'n/a'}`, 'success')
       if (student) await loadTasks(student.id)
     } catch (err: any) {
-      alert(`❌ ${err.response?.data?.detail || 'Failed to complete'}`)
+      toast(err.response?.data?.detail || 'Failed to complete', 'error')
     }
   }
 
@@ -112,15 +113,15 @@ export default function Profile() {
   // Self-assign: the API resolves the student from this token, so it can only ever add
   // the task to the caller's own account.
   const pickTask = async (taskId: string, desc: string) => {
-    if (!confirm(`Pick up "${desc}"?\n\nIt'll be added to your tasks — start its timer from My Tasks when you begin.`)) return
+    if (!(await confirmDialog({ title: 'Pick up this task?', message: `"${desc}" will be added to your tasks — start its timer from My Tasks when you begin.`, confirmLabel: 'Pick it up' }))) return
     setPicking(taskId)
     try {
       const headers = await authHeader()
       await axios.post(`${API}/self-assign`, { task_id: taskId }, { headers })
       if (student) await loadTasks(student.id)
-      alert(`✅ "${desc}" added to your tasks.`)
+      toast(`"${desc}" added to your tasks.`, 'success')
     } catch (err: any) {
-      alert(`❌ ${err.response?.data?.detail || 'Could not pick up this task. The server may be waking up — try again.'}`)
+      toast(err.response?.data?.detail || 'Could not pick up this task. The server may be waking up — try again.', 'error')
     } finally { setPicking(null) }
   }
 
@@ -130,7 +131,7 @@ export default function Profile() {
     const ext = (file.name.split('.').pop() || 'png').toLowerCase()
     const path = `${student.id}-${Date.now()}.${ext}`
     const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, cacheControl: '3600' })
-    if (upErr) { setSaving(false); alert(`Upload failed: ${upErr.message}`); return }
+    if (upErr) { setSaving(false); toast(`Upload failed: ${upErr.message}`, 'error'); return }
     const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path)
     await supabase.from('students').update({ avatar_url: pub.publicUrl }).eq('id', student.id)
     await logActivity({

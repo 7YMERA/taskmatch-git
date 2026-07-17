@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { logActivity } from '../lib/log'
 import Sidebar from '../components/Sidebar'
+import { toast, confirmDialog } from '../lib/ui'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -73,12 +74,12 @@ export default function Tasks() {
 
   const createGroup = async () => {
     const name = groupForm.name.trim()
-    if (!name) return alert('Enter a group name')
+    if (!name) return toast('Enter a group name', 'error')
     // Reuse an existing group (e.g. one made on the Students page) or create a new one.
     const existing = groups.find(g => g.name === name)
     if (!existing) {
       const { error } = await supabase.from('groups').insert({ name, color: groupForm.color, created_by: userEmail })
-      if (error) return alert(error.message)
+      if (error) return toast(error.message, 'error')
     }
     if (groupForm.members.length > 0) {
       await supabase.from('tasks').update({ group_label: name }).in('id', groupForm.members)
@@ -100,8 +101,8 @@ export default function Tasks() {
   }
 
   const createTask = async () => {
-    if (!form.description) return alert('Enter a task description')
-    if (taskSkills.length === 0) return alert('Select at least one required skill')
+    if (!form.description) return toast('Enter a task description', 'error')
+    if (taskSkills.length === 0) return toast('Select at least one required skill', 'error')
 
     const severity = form.severity || 'Medium'  // default only if left unset
     const { data, error } = await supabase.from('tasks').insert({
@@ -114,7 +115,7 @@ export default function Tasks() {
       status: 'New'
     }).select().single()
 
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, 'error')
 
     await supabase.from('task_skills').insert(
       taskSkills.map(s => ({ task_id: data.id, skill_id: s.skill_id, min_proficiency: s.min_proficiency }))
@@ -165,16 +166,16 @@ export default function Tasks() {
       setRecMeta(prev => ({ ...prev, [task_id]: { suggested_pair: res.data.suggested_pair, assigned_count: res.data.assigned_count } }))
       fetchAssignees(task_id)
       fetchTasks()
-      alert(`✅ ${name} assigned!`)
+      toast(`${name} assigned!`, 'success')
     } catch (err: any) {
-      alert(`❌ ${err.response?.data?.detail || 'Failed'}`)
+      toast(err.response?.data?.detail || 'Could not assign', 'error')
     } finally {
       setAssigning(null)
     }
   }
 
   const deleteTask = async (id: string, description: string) => {
-  if (!confirm(`Delete "${description}"?`)) return
+  if (!(await confirmDialog({ title: 'Delete task?', message: `"${description}" and its assignments will be removed. This can't be undone.`, danger: true, confirmLabel: 'Delete' }))) return
   await supabase.from('task_skills').delete().eq('task_id', id)
   await supabase.from('assignments').delete().eq('task_id', id)
   await supabase.from('tasks').delete().eq('id', id)

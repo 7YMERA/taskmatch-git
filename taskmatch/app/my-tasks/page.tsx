@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import axios from 'axios'
 import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
+import { toast } from '../lib/ui'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -78,7 +79,7 @@ export default function MyTasks() {
     try {
       await axios.post(`${API}/start`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
       if (student) await load(student.id)
-    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not start')}`) }
+    } catch (err: any) { toast(errMsg(err, 'Could not start'), 'error') }
     finally { setBusy(null) }
   }
 
@@ -89,13 +90,13 @@ export default function MyTasks() {
     if (input === null) return
     const trimmed = input.trim()
     const actual_hours = trimmed === '' ? undefined : parseFloat(trimmed)
-    if (actual_hours !== undefined && (isNaN(actual_hours) || actual_hours < 0)) { alert('Enter a valid number of hours.'); return }
+    if (actual_hours !== undefined && (isNaN(actual_hours) || actual_hours < 0)) { toast('Enter a valid number of hours.', 'error'); return }
     setBusy(assignmentId)
     try {
       const res = await axios.post(`${API}/complete`, { assignment_id: assignmentId, actual_hours, actor_email: userEmail, actor_role: userRole })
-      alert(`✅ Completed!${userRole === 'leader' && res.data.score != null ? ` Score: ${res.data.score}` : ''}`)
+      toast(`Completed!${userRole === 'leader' && res.data.score != null ? ` Score: ${res.data.score}` : ''}`, 'success')
       if (student) await load(student.id)
-    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not complete')}`) }
+    } catch (err: any) { toast(errMsg(err, 'Could not complete'), 'error') }
     finally { setBusy(null) }
   }
 

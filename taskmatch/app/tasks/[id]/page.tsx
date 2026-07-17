@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { logActivity } from '../../lib/log'
 import Sidebar from '../../components/Sidebar'
+import { toast, confirmDialog } from '../../lib/ui'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -94,24 +95,24 @@ export default function TaskDetail() {
     try {
       await axios.post(`${API}/assign`, { task_id: id, student_id, actor_email: userEmail, actor_role: userRole })
       await refresh()
-      alert(`✅ ${name} assigned!`)
-    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not assign')}`) } finally { setAssigning(null) }
+      toast(`${name} assigned!`, 'success')
+    } catch (err: any) { toast(errMsg(err, 'Could not assign'), 'error') } finally { setAssigning(null) }
   }
 
   const removeAssignee = async (assignmentId: string, name: string, status: string) => {
-    if (status === 'Completed') { alert("This assignment is completed — it's kept as the student's performance record and can't be removed."); return }
-    if (!confirm(`Remove ${name} from this task?\n\nThey keep their profile and history; only this assignment is removed.${status === 'In Progress' ? '\n\nTheir running timer for this task will be discarded.' : ''}`)) return
+    if (status === 'Completed') { toast("This assignment is completed — it's kept as the student's performance record and can't be removed.", 'info'); return }
+    if (!(await confirmDialog({ title: `Remove ${name} from this task?`, message: `They keep their profile and history; only this assignment is removed.${status === 'In Progress' ? ' Their running timer for this task will be discarded.' : ''}`, danger: true, confirmLabel: 'Remove' }))) return
     try {
       await axios.post(`${API}/unassign`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
       await refresh()
-    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not remove')}`) }
+    } catch (err: any) { toast(errMsg(err, 'Could not remove'), 'error') }
   }
 
   const startAssignment = async (assignmentId: string) => {
     try {
       await axios.post(`${API}/start`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
       await refresh()
-    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not start')}`) }
+    } catch (err: any) { toast(errMsg(err, 'Could not start'), 'error') }
   }
 
   const completeAssignment = async (assignmentId: string, name: string) => {
@@ -119,12 +120,12 @@ export default function TaskDetail() {
     if (input === null) return
     const trimmed = input.trim()
     const actual_hours = trimmed === '' ? undefined : parseFloat(trimmed)
-    if (actual_hours !== undefined && (isNaN(actual_hours) || actual_hours < 0)) { alert('Enter a valid number.'); return }
+    if (actual_hours !== undefined && (isNaN(actual_hours) || actual_hours < 0)) { toast('Enter a valid number.', 'error'); return }
     try {
       const res = await axios.post(`${API}/complete`, { assignment_id: assignmentId, actual_hours, actor_email: userEmail, actor_role: userRole })
-      alert(`✅ Completed! Score: ${res.data.score ?? 'n/a'}`)
+      toast(`Completed! Score: ${res.data.score ?? 'n/a'}`, 'success')
       await refresh()
-    } catch (err: any) { alert(`❌ ${errMsg(err, 'Could not complete')}`) }
+    } catch (err: any) { toast(errMsg(err, 'Could not complete'), 'error') }
   }
 
   const addComment = async () => {
@@ -133,7 +134,7 @@ export default function TaskDetail() {
     const { data, error } = await supabase.from('task_comments')
       .insert({ task_id: id, author_email: userEmail, author_role: userRole, body })
       .select().single()
-    if (error) return alert(error.message)
+    if (error) return toast(error.message, 'error')
     await logActivity({
       action: 'comment.added', entity_type: 'comment', entity_id: data.id,
       summary: `${userEmail} commented on '${task?.description || 'a task'}'`,
