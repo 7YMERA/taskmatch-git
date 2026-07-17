@@ -30,6 +30,7 @@ export default function Tasks() {
   const [form, setForm] = useState({ description: '', committed_hours: '', severity: '', start_date: '', due_date: '', group_label: '' })
   const [groupFilter, setGroupFilter] = useState('all')
   const [statusFilter, setStatusFilter] = useState('all')
+  const [severityFilter, setSeverityFilter] = useState('all')
   const [groups, setGroups] = useState<any[]>([])
   const [showGroupForm, setShowGroupForm] = useState(false)
   const [groupForm, setGroupForm] = useState<{ name: string, color: string, members: string[] }>({ name: '', color: GROUP_COLORS[0], members: [] })
@@ -237,11 +238,13 @@ const updateTaskStatus = async (id: string, status: string) => {
       ? tasks.filter(t => !t.group_label)
       : tasks.filter(t => t.group_label === groupFilter)
   const shownTasks = byGroup.filter(t => {
-    if (statusFilter === 'all') return true
-    if (statusFilter === 'Delayed') return isDelayed(t)
-    if (statusFilter === 'Closed') return isClosed(t)
-    if (statusFilter === 'Late') return isLate(t)
-    return t.status === statusFilter
+    const statusOk = statusFilter === 'all' ? true
+      : statusFilter === 'Delayed' ? isDelayed(t)
+        : statusFilter === 'Closed' ? isClosed(t)
+          : statusFilter === 'Late' ? isLate(t)
+            : t.status === statusFilter
+    const sevOk = severityFilter === 'all' || t.severity === severityFilter
+    return statusOk && sevOk
   })
 
   return (
@@ -492,6 +495,14 @@ const updateTaskStatus = async (id: string, status: string) => {
               <option value="Late">Completed · Late</option>
               <option value="Delayed">Delayed</option>
               <option value="Closed">Closed</option>
+            </select>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-white/40">Severity:</span>
+            <select value={severityFilter} onChange={e => setSeverityFilter(e.target.value)}
+              className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none">
+              <option value="all">All</option>
+              {SEVERITIES.map(s => <option key={s} value={s}>{s}</option>)}
             </select>
           </div>
           <div className="w-px h-5 bg-white/10" />
