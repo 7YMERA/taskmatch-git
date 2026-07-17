@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { logActivity } from '../lib/log'
 import Sidebar from '../components/Sidebar'
+import SkillPicker from '../components/SkillPicker'
 import { toast, confirmDialog } from '../lib/ui'
 
 const supabase = createClient(
@@ -166,19 +167,6 @@ export default function Students() {
     setSkills(data || [])
   }
 
-  const toggleSkill = (skill_id: string, list: any[], setList: any) => {
-    setList((prev: any[]) =>
-      prev.find(s => s.skill_id === skill_id)
-        ? prev.filter(s => s.skill_id !== skill_id)
-        : [...prev, { skill_id, proficiency: 1 }]
-    )
-  }
-
-  const updateProficiency = (skill_id: string, proficiency: number, list: any[], setList: any) => {
-    setList((prev: any[]) =>
-      prev.map(s => s.skill_id === skill_id ? { ...s, proficiency } : s)
-    )
-  }
 
   const addStudent = async () => {
     if (!form.name || !form.matric || !form.email) return toast('Fill in name, matric and email', 'error')
@@ -540,32 +528,9 @@ export default function Students() {
               </datalist>
             </div>
 
-            <p className="text-xs text-white/40 mb-2">Assign skills</p>
-            <div className="flex flex-col gap-2 mb-4">
-              {skills.map(skill => {
-                const selected = selectedSkills.find(s => s.skill_id === skill.id)
-                return (
-                  <div key={skill.id} className="flex items-center gap-3">
-                    <button
-                      onClick={() => toggleSkill(skill.id, selectedSkills, setSelectedSkills)}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition ${selected
-                        ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                        : 'border-white/10 text-white/40 hover:text-white'}`}>
-                      {skill.skill_name}
-                    </button>
-                    {selected && (
-                      <select
-                        value={selected.proficiency}
-                        onChange={e => updateProficiency(skill.id, parseInt(e.target.value), selectedSkills, setSelectedSkills)}
-                        className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-1 text-xs text-white outline-none">
-                        <option value={1}>Beginner</option>
-                        <option value={2}>Intermediate</option>
-                        <option value={3}>Advanced</option>
-                      </select>
-                    )}
-                  </div>
-                )
-              })}
+            <p className="text-xs text-white/40 mb-2">Assign skills <span className="text-white/25">— click a skill, then set B / I / A</span></p>
+            <div className="mb-4">
+              <SkillPicker skills={skills} value={selectedSkills} onChange={setSelectedSkills} />
             </div>
 
             <div className="flex gap-3">
@@ -714,31 +679,8 @@ export default function Students() {
                             onChange={e => uploadStudentAvatar(s.id, s.name, e.target.files && e.target.files[0] ? e.target.files[0] : undefined)} />
                         </label>
                       </div>
-                      <div className="flex flex-col gap-2 mb-3">
-                        {skills.map(skill => {
-                          const existing = editSkills.find(es => es.skill_id === skill.id)
-                          return (
-                            <div key={skill.id} className="flex items-center gap-3">
-                              <button
-                                onClick={() => toggleSkill(skill.id, editSkills, setEditSkills)}
-                                className={`text-xs px-3 py-1.5 rounded-lg border transition ${existing
-                                  ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                                  : 'border-white/10 text-white/40 hover:text-white'}`}>
-                                {skill.skill_name}
-                              </button>
-                              {existing && (
-                                <select
-                                  value={existing.proficiency}
-                                  onChange={e => updateProficiency(skill.id, parseInt(e.target.value), editSkills, setEditSkills)}
-                                  className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-1 text-xs text-white outline-none">
-                                  <option value={1}>Beginner</option>
-                                  <option value={2}>Intermediate</option>
-                                  <option value={3}>Advanced</option>
-                                </select>
-                              )}
-                            </div>
-                          )
-                        })}
+                      <div className="mb-3">
+                        <SkillPicker skills={skills} value={editSkills} onChange={setEditSkills} />
                       </div>
                       <div className="flex gap-3">
                         <button onClick={() => saveSkills(s.id)}

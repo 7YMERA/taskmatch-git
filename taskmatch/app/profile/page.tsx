@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { logActivity } from '../lib/log'
 import Sidebar from '../components/Sidebar'
+import SkillPicker from '../components/SkillPicker'
 import { toast, confirmDialog } from '../lib/ui'
 
 const supabase = createClient(
@@ -148,15 +149,6 @@ export default function Profile() {
     setSaving(false)
   }
 
-  const toggleSkill = (skill_id: string) =>
-    setMySkills(prev =>
-      prev.find(s => s.skill_id === skill_id)
-        ? prev.filter(s => s.skill_id !== skill_id)
-        : [...prev, { skill_id, proficiency: 1 }]
-    )
-
-  const setProficiency = (skill_id: string, proficiency: number) =>
-    setMySkills(prev => prev.map(s => s.skill_id === skill_id ? { ...s, proficiency } : s))
 
   const saveSkills = async () => {
     if (!student) return
@@ -328,32 +320,7 @@ export default function Profile() {
                     </div>
                   )
                 ) : (
-                  <div className="flex flex-col gap-2">
-                    {skills.map(skill => {
-                      const selected = mySkills.find(s => s.skill_id === skill.id)
-                      return (
-                        <div key={skill.id} className="flex items-center gap-3">
-                          <button
-                            onClick={() => toggleSkill(skill.id)}
-                            className={`text-xs px-3 py-1.5 rounded-lg border transition ${selected
-                              ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                              : 'border-white/10 text-white/40 hover:text-white'}`}>
-                            {skill.skill_name}
-                          </button>
-                          {selected && (
-                            <select
-                              value={selected.proficiency}
-                              onChange={e => setProficiency(skill.id, parseInt(e.target.value))}
-                              className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-1 text-xs text-white outline-none">
-                              <option value={1}>Beginner</option>
-                              <option value={2}>Intermediate</option>
-                              <option value={3}>Advanced</option>
-                            </select>
-                          )}
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <SkillPicker skills={skills} value={mySkills} onChange={setMySkills} />
                 )}
               </div>
 

@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { logActivity } from '../lib/log'
 import Sidebar from '../components/Sidebar'
+import SkillPicker from '../components/SkillPicker'
 import { toast, confirmDialog } from '../lib/ui'
 
 const supabase = createClient(
@@ -428,41 +429,9 @@ const updateTaskStatus = async (id: string, status: string) => {
               </div>
             </div>
 
-            <p className="text-xs text-white/40 mb-2">Required skills</p>
-            <div className="flex flex-col gap-2 mb-4">
-              {skills.map(skill => {
-                const selected = taskSkills.find(s => s.skill_id === skill.id)
-                return (
-                  <div key={skill.id} className="flex items-center gap-3">
-                    <button
-                      onClick={() => setTaskSkills(prev =>
-                        prev.find(s => s.skill_id === skill.id)
-                          ? prev.filter(s => s.skill_id !== skill.id)
-                          : [...prev, { skill_id: skill.id, min_proficiency: 1 }]
-                      )}
-                      className={`text-xs px-3 py-1.5 rounded-lg border transition ${selected
-                        ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                        : 'border-white/10 text-white/40 hover:text-white'}`}>
-                      {skill.skill_name}
-                    </button>
-                    {selected && (
-                      <select
-                        value={selected.min_proficiency}
-                        onChange={e => setTaskSkills(prev =>
-                          prev.map(s => s.skill_id === skill.id
-                            ? { ...s, min_proficiency: parseInt(e.target.value) }
-                            : s
-                          )
-                        )}
-                        className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-1 text-xs text-white outline-none">
-                        <option value={1}>Min: Beginner</option>
-                        <option value={2}>Min: Intermediate</option>
-                        <option value={3}>Min: Advanced</option>
-                      </select>
-                    )}
-                  </div>
-                )
-              })}
+            <p className="text-xs text-white/40 mb-2">Required skills <span className="text-white/25">— click a skill, then set the minimum B / I / A</span></p>
+            <div className="mb-4">
+              <SkillPicker skills={skills} value={taskSkills} onChange={setTaskSkills} field="min_proficiency" labels={['Min: Beginner', 'Min: Intermediate', 'Min: Advanced']} />
             </div>
 
             <div className="flex gap-3">
