@@ -700,12 +700,16 @@ def recommend_tasks(student_id: str):
     # Step 3: Tasks open for assignment or still gathering a team.
     open_tasks = (
         supabase.table("tasks")
-        .select("id, description, estimated_days, committed_hours, severity, status")
+        .select("id, description, estimated_days, committed_hours, severity, status, due_date")
         .in_("status", ["New", "In Progress"])
         .execute()
     ).data
 
-    candidate_ids = [t["id"] for t in open_tasks if t["id"] not in assigned_task_ids]
+    # Only suggest tasks the student can actually pick up: not already theirs, and not closed/locked
+    # (overdue past the SLA grace window — those reject on assign, so don't show them).
+    open_tasks = [t for t in open_tasks
+                  if t["id"] not in assigned_task_ids and not is_task_closed(t.get("due_date"), t["status"])]
+    candidate_ids = [t["id"] for t in open_tasks]
     if not candidate_ids:
         return {"student_id": student_id, "qualified": [], "growth": []}
 
