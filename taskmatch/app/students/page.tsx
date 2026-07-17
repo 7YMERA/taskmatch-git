@@ -521,17 +521,8 @@ export default function Students() {
                   <option key={p} value={p} className="text-white">{p}</option>
                 ))}
               </select>
-              <input
-                list="student-groups"
-                placeholder="Group / team (type new or pick existing)"
-                value={form.group_label}
-                onChange={e => setForm({ ...form, group_label: e.target.value })}
-                className="bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500 transition"
-              />
-              <datalist id="student-groups">
-                {existingGroups.map(g => <option key={g} value={g} />)}
-              </datalist>
             </div>
+            <p className="text-[11px] text-white/30 mb-4 -mt-1">Tip: add the student first, then put them in a group from the group filter → “+ Add students”.</p>
 
             <p className="text-xs text-white/40 mb-2">Assign skills <span className="text-white/25">— click a skill, then set B / I / A</span></p>
             <div className="mb-4">
