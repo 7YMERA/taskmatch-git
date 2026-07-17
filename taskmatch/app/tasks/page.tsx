@@ -475,18 +475,18 @@ const updateTaskStatus = async (id: string, status: string) => {
             </select>
           </div>
           <div className="w-px h-5 bg-white/10" />
-          <span className="text-xs text-white/40 mr-1">Group:</span>
-          {['all', ...existingGroups, '__none__'].map(g => (
-            <button key={g} onClick={() => setGroupFilter(g)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition ${groupFilter === g
-                ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                : 'border-white/10 text-white/40 hover:text-white'}`}>
-              {g !== 'all' && g !== '__none__' && (
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: groupColor(g) }} />
-              )}
-              {g === 'all' ? 'All' : g === '__none__' ? 'No group' : g}
-            </button>
-          ))}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-white/40">Group:</span>
+            {groupFilter !== 'all' && groupFilter !== '__none__' && (
+              <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: groupColor(groupFilter) }} />
+            )}
+            <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
+              className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none max-w-[14rem]">
+              <option value="all">All groups</option>
+              {existingGroups.map(g => <option key={g} value={g}>{g}</option>)}
+              <option value="__none__">No group</option>
+            </select>
+          </div>
         </div>
 
         {/* Tasks list */}

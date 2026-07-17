@@ -360,10 +360,15 @@ export default function Students() {
                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
               </div>
-              <div>
-                <p className="text-sm font-medium text-white">Create or update a group</p>
-                <p className="text-xs text-white/40">New name creates a group; an existing name adds the selected students to it</p>
-              </div>
+              {(() => {
+                const isExisting = groups.some(g => g.name === groupForm.name.trim())
+                return (
+                  <div>
+                    <p className="text-sm font-medium text-white">{isExisting ? `Add students to “${groupForm.name.trim()}”` : 'Create a group'}</p>
+                    <p className="text-xs text-white/40">{isExisting ? 'Pick students below — anyone in another group will be moved here' : 'Name it, pick a colour, and add students (typing an existing name adds to that group)'}</p>
+                  </div>
+                )
+              })()}
             </div>
             <input
               list="existing-group-names"
@@ -550,20 +555,20 @@ export default function Students() {
           </div>
         )}
 
-        {/* Group filter — always shown so the filtering ability is visible */}
-        <div className="flex gap-2 mb-4 flex-wrap items-center">
-          <span className="text-xs text-white/40 mr-1">Group:</span>
-          {['all', ...existingGroups, '__none__'].map(g => (
-            <button key={g} onClick={() => setGroupFilter(g)}
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border transition ${groupFilter === g
-                ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300'
-                : 'border-white/10 text-white/40 hover:text-white'}`}>
-              {g !== 'all' && g !== '__none__' && (
-                <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: groupColor(g) }} />
-              )}
-              {g === 'all' ? 'All' : g === '__none__' ? 'No group' : g}
-            </button>
-          ))}
+        {/* Group filter — a compact dropdown so a long group list stays tidy */}
+        <div className="flex gap-2 mb-4 items-center">
+          <span className="text-xs text-white/40">Group:</span>
+          {groupFilter !== 'all' && groupFilter !== '__none__' && (
+            <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: groupColor(groupFilter) }} />
+          )}
+          <select value={groupFilter} onChange={e => setGroupFilter(e.target.value)}
+            className="bg-[#1a1a1a] border border-white/10 rounded-lg px-3 py-1.5 text-xs text-white outline-none max-w-[16rem]">
+            <option value="all">All groups ({students.length})</option>
+            {existingGroups.map(g => (
+              <option key={g} value={g}>{g} ({students.filter(s => s.group_label === g).length})</option>
+            ))}
+            <option value="__none__">No group ({students.filter(s => !s.group_label).length})</option>
+          </select>
         </div>
 
         {/* Students list */}
@@ -573,13 +578,19 @@ export default function Students() {
               Team roster ({shownStudents.length}{groupFilter !== 'all' ? ` of ${students.length}` : ''})
             </p>
             {userRole === 'leader' && groupFilter !== 'all' && groupFilter !== '__none__' && (
-              <button onClick={() => disbandGroup(groupFilter)}
-                className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
-                  <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                </svg>
-                Disband "{groupFilter}"
-              </button>
+              <div className="flex gap-2">
+                <button onClick={() => { setGroupForm({ name: groupFilter, color: groupColor(groupFilter), members: [] }); setShowGroupForm(true); setShowForm(false) }}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-indigo-500/40 text-indigo-300 hover:bg-indigo-500/10 transition">
+                  + Add students
+                </button>
+                <button onClick={() => disbandGroup(groupFilter)}
+                  className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border border-red-500/30 text-red-400 hover:bg-red-500/10 transition">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3.5 h-3.5">
+                    <path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+                  </svg>
+                  Disband
+                </button>
+              </div>
             )}
           </div>
           {loading ? (
