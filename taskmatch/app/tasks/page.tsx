@@ -222,7 +222,14 @@ const updateTaskStatus = async (id: string, status: string) => {
   const initials = (name: string) =>
     name?.split(' ').map((n: string) => n[0]).join('').slice(0, 2).toUpperCase()
 
-  const existingGroups = Array.from(new Set(tasks.map(t => t.group_label).filter(Boolean))) as string[]
+  // Groups come from the canonical `groups` table (shared with the Students tab) unioned with any
+  // labels present on tasks — so a group made on either tab shows here, even before it has a task.
+  const _groupCreatedAt: { [name: string]: number } = {}
+  groups.forEach(g => { _groupCreatedAt[g.name] = new Date(g.created_at).getTime() })
+  const existingGroups = (Array.from(new Set([
+    ...groups.map(g => g.name),
+    ...tasks.map(t => t.group_label).filter(Boolean),
+  ])) as string[]).sort((a, b) => (_groupCreatedAt[b] ?? 0) - (_groupCreatedAt[a] ?? 0))
   const byGroup = groupFilter === 'all'
     ? tasks
     : groupFilter === '__none__'

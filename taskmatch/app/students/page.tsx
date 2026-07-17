@@ -116,15 +116,23 @@ export default function Students() {
   const createGroup = async () => {
     const name = groupForm.name.trim()
     if (!name) return alert('Enter a group name')
-    const { error } = await supabase.from('groups').insert({ name, color: groupForm.color, created_by: userEmail })
-    if (error) return alert(error.message.includes('duplicate') ? `A group named "${name}" already exists.` : error.message)
+    // Reuse an existing group (incl. one created on the Tasks tab) instead of erroring —
+    // this is what lets you ADD members to an existing group.
+    const existing = groups.find(g => g.name === name)
+    if (!existing) {
+      const { error } = await supabase.from('groups').insert({ name, color: groupForm.color, created_by: userEmail })
+      if (error && !error.message.toLowerCase().includes('duplicate')) return alert(error.message)
+    }
     if (groupForm.members.length > 0) {
       await supabase.from('students').update({ group_label: name }).in('id', groupForm.members)
     }
+    const n = groupForm.members.length
     await logActivity({
-      action: 'group.created', entity_type: 'group',
-      summary: `Created group '${name}' with ${groupForm.members.length} member${groupForm.members.length === 1 ? '' : 's'}`,
-      details: { color: groupForm.color, members: groupForm.members },
+      action: existing ? 'group.members_added' : 'group.created', entity_type: 'group',
+      summary: existing
+        ? `Added ${n} member${n === 1 ? '' : 's'} to group '${name}'`
+        : `Created group '${name}' with ${n} member${n === 1 ? '' : 's'}`,
+      details: { color: groupForm.color, members: groupForm.members, reused: !!existing },
     })
     setGroupForm({ name: '', color: GROUP_COLORS[0], members: [] })
     setShowGroupForm(false)
@@ -303,9 +311,12 @@ export default function Students() {
       : groupCreatedAt[label] != null ? -groupCreatedAt[label]   // newest created_at → most negative → top
         : Number.MAX_SAFE_INTEGER                                // labelled but no group row → just above ungrouped
 
-  // Filter chips ordered newest-group-first to match the roster clustering.
-  const existingGroups = (Array.from(new Set(students.map(s => s.group_label).filter(Boolean))) as string[])
-    .sort((a, b) => groupRank(a) - groupRank(b))
+  // Groups come from the canonical `groups` table (shared with the Tasks tab) unioned with any
+  // labels present on the roster — so a group made on either tab shows here, even with no members yet.
+  const existingGroups = (Array.from(new Set([
+    ...groups.map(g => g.name),
+    ...students.map(s => s.group_label).filter(Boolean),
+  ])) as string[]).sort((a, b) => groupRank(a) - groupRank(b))
 
   const filteredStudents = groupFilter === 'all'
     ? students
@@ -362,18 +373,22 @@ export default function Students() {
                 </svg>
               </div>
               <div>
-                <p className="text-sm font-medium text-white">Create group</p>
-                <p className="text-xs text-white/40">Name it, pick a colour, and add your students</p>
+                <p className="text-sm font-medium text-white">Create or update a group</p>
+                <p className="text-xs text-white/40">New name creates a group; an existing name adds the selected students to it</p>
               </div>
             </div>
             <input
-              placeholder="Group name e.g. Test Group"
+              list="existing-group-names"
+              placeholder="Group name — type new, or pick an existing one to add members"
               value={groupForm.name}
               onChange={e => setGroupForm({ ...groupForm, name: e.target.value })}
               className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-sm text-white placeholder-white/20 outline-none focus:border-indigo-500 transition mb-4"
             />
+            <datalist id="existing-group-names">
+              {existingGroups.map(g => <option key={g} value={g} />)}
+            </datalist>
 
-            <p className="text-xs text-white/40 mb-2">Colour</p>
+            <p className="text-xs text-white/40 mb-2">Colour <span className="text-white/25">(only used when creating a new group)</span></p>
             <div className="flex gap-2 mb-4">
               {GROUP_COLORS.map(c => (
                 <button key={c} type="button" onClick={() => setGroupForm({ ...groupForm, color: c })}
@@ -383,16 +398,18 @@ export default function Students() {
               ))}
             </div>
 
-            <p className="text-xs text-white/40 mb-2">Add students ({groupForm.members.length} selected)</p>
-            <p className="text-xs text-white/30 mb-2">Only students not yet in a group are shown — disband a group to free its members.</p>
+            <p className="text-xs text-white/40 mb-2">Select students ({groupForm.members.length} selected)</p>
+            <p className="text-xs text-white/30 mb-2">Anyone already in another group will be moved here.</p>
             <div className="flex flex-col gap-1 mb-4 max-h-56 overflow-y-auto">
               {(() => {
-                const ungrouped = students.filter(s => !s.group_label)
-                return ungrouped.length === 0 ? (
+                const target = groupForm.name.trim()
+                // Show everyone except those already in the target group; note their current group.
+                const list = students.filter(s => !(target && s.group_label === target))
+                return list.length === 0 ? (
                   <p className="text-xs text-white/30">
-                    {students.length === 0 ? 'No students yet — add students first.' : 'All students are already in a group.'}
+                    {students.length === 0 ? 'No students yet — add students first.' : 'Everyone is already in this group.'}
                   </p>
-                ) : ungrouped.map(s => {
+                ) : list.map(s => {
                   const checked = groupForm.members.includes(s.id)
                   return (
                     <button key={s.id} type="button"
@@ -405,6 +422,7 @@ export default function Students() {
                         : 'border-white/10 text-white/50 hover:text-white'}`}>
                       <span className={`w-3.5 h-3.5 rounded-sm border shrink-0 ${checked ? 'bg-indigo-400 border-indigo-400' : 'border-white/30'}`} />
                       {s.name} <span className="text-white/30">· {s.matric}</span>
+                      {s.group_label && s.group_label !== target && <span className="ml-auto text-white/30">in {s.group_label}</span>}
                     </button>
                   )
                 })
@@ -420,7 +438,7 @@ export default function Students() {
                   <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
                   <path d="M16 3.13a4 4 0 0 1 0 7.75" />
                 </svg>
-                Create group
+                Save group
               </button>
               <button onClick={() => { setShowGroupForm(false); setGroupForm({ name: '', color: GROUP_COLORS[0], members: [] }) }}
                 className="text-sm px-4 py-2 border border-white/10 text-white/60 hover:text-white rounded-lg transition">
