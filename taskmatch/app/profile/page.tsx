@@ -194,7 +194,10 @@ export default function Profile() {
     return 'bg-white/10 text-white/40'
   }
 
-  const wip = assignments.filter(a => a.status === 'In Progress' || a.tasks?.status === 'In Progress').length
+  // WIP = the student's own active assignments (Assigned or In Progress) — same definition the
+  // matcher, /assign, /wip and the roster use. (Previously counted the TASK's status, which wrongly
+  // included tasks the student had already completed but teammates hadn't.)
+  const wip = assignments.filter(a => a.status === 'Assigned' || a.status === 'In Progress').length
 
   // My stats (computed locally — mirrors the per-student dashboard)
   const myDone = assignments.filter(a => a.status === 'Completed')
