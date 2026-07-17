@@ -27,6 +27,7 @@ export default function MyTasks() {
   const [busy, setBusy] = useState<string | null>(null)
   const [now, setNow] = useState(0)
   const [showTimers, setShowTimers] = useState(true)   // the elapsed-time box can be shown/hidden
+  const [teamTasks, setTeamTasks] = useState<any[]>([])
 
   useEffect(() => { init() }, [])
   // live clock for the running timers
@@ -62,7 +63,28 @@ export default function MyTasks() {
     if (!s) { setNotFound(true); setLoading(false); return }
     setStudent(s)
     await load(s.id)
+    await loadTeam(s.group_label, s.id)
     setLoading(false)
+  }
+
+  // Teammates' active tasks + due dates, so a student can schedule around the group.
+  const loadTeam = async (grp: string | null, selfId: string) => {
+    if (!grp) { setTeamTasks([]); return }
+    const { data: mates } = await supabase.from('students').select('id, name').eq('group_label', grp).neq('id', selfId)
+    const ids = (mates || []).map(m => m.id)
+    if (ids.length === 0) { setTeamTasks([]); return }
+    const nameById: { [id: string]: string } = {}
+    ;(mates || []).forEach(m => { nameById[m.id] = m.name })
+    const { data } = await supabase
+      .from('assignments')
+      .select('student_id, status, tasks(description, due_date)')
+      .in('student_id', ids)
+      .in('status', ['Assigned', 'In Progress'])
+    const rows = (data || [])
+      .filter((a: any) => a.tasks)
+      .map((a: any) => ({ name: nameById[a.student_id], description: a.tasks.description, due_date: a.tasks.due_date, status: a.status }))
+      .sort((x: any, y: any) => (x.due_date || '9999-12-31').localeCompare(y.due_date || '9999-12-31'))
+    setTeamTasks(rows)
   }
 
   const load = async (sid: string) => {
@@ -105,11 +127,32 @@ export default function MyTasks() {
   const severityColor = (s: string) =>
     s === 'Critical' ? 'bg-red-500/20 text-red-400' : s === 'Medium' ? 'bg-amber-500/20 text-amber-400' : 'bg-white/10 text-white/50'
 
-  const elapsed = (startIso: string) => {
-    if (!startIso) return '0h 0m 0s'
-    const secs = Math.max(0, Math.floor((now - new Date(startIso).getTime()) / 1000))
+  // Elapsed = banked (accumulated) time + the current running segment (frozen while paused).
+  const elapsedSecs = (a: any) => {
+    const acc = a.accumulated_seconds || 0
+    if (a.paused_at || !a.in_progress_at) return acc
+    return acc + Math.max(0, Math.floor((now - new Date(a.in_progress_at).getTime()) / 1000))
+  }
+  const fmt = (secs: number) => {
     const h = Math.floor(secs / 3600), m = Math.floor((secs % 3600) / 60), s = secs % 60
     return `${h}h ${m}m ${s}s`
+  }
+
+  const pauseTask = async (assignmentId: string) => {
+    setBusy(assignmentId)
+    try {
+      await axios.post(`${API}/pause`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
+      if (student) await load(student.id)
+    } catch (err: any) { toast(errMsg(err, 'Could not pause'), 'error') }
+    finally { setBusy(null) }
+  }
+  const resumeTask = async (assignmentId: string) => {
+    setBusy(assignmentId)
+    try {
+      await axios.post(`${API}/resume`, { assignment_id: assignmentId, actor_email: userEmail, actor_role: userRole })
+      if (student) await load(student.id)
+    } catch (err: any) { toast(errMsg(err, 'Could not resume'), 'error') }
+    finally { setBusy(null) }
   }
 
   const active = assignments.filter(a => a.status === 'Assigned' || a.status === 'In Progress')
@@ -173,22 +216,34 @@ export default function MyTasks() {
                             {busy === a.id ? '…' : '▶ Start'}
                           </button>
                         </div>
-                      ) : (
+                      ) : (() => {
+                        const paused = !!a.paused_at
+                        return (
                         <div className="flex flex-col items-end gap-2">
                           {showTimers ? (
-                            <div className="rounded-lg border border-emerald-500/30 bg-emerald-500/10 px-3 py-1.5 text-right min-w-[7.5rem]">
-                              <p className="text-lg font-mono font-semibold text-emerald-400 tabular-nums leading-none">{elapsed(a.in_progress_at)}</p>
-                              <p className="text-[10px] text-emerald-400/60 mt-1">⏱ elapsed · running</p>
+                            <div className={`rounded-lg border px-3 py-1.5 text-right min-w-[7.5rem] ${paused ? 'border-amber-500/30 bg-amber-500/10' : 'border-emerald-500/30 bg-emerald-500/10'}`}>
+                              <p className={`text-lg font-mono font-semibold tabular-nums leading-none ${paused ? 'text-amber-400' : 'text-emerald-400'}`}>{fmt(elapsedSecs(a))}</p>
+                              <p className={`text-[10px] mt-1 ${paused ? 'text-amber-400/60' : 'text-emerald-400/60'}`}>⏱ elapsed · {paused ? 'paused' : 'running'}</p>
                             </div>
                           ) : (
-                            <span className="text-xs px-2 py-1 rounded-full bg-emerald-500/20 text-emerald-400">running</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${paused ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}>{paused ? 'paused' : 'running'}</span>
                           )}
-                          <button onClick={() => completeTask(a.id, a.tasks?.description || 'this task')} disabled={busy === a.id}
-                            className="text-xs px-4 py-2 rounded-lg border border-green-500/30 text-green-400 hover:bg-green-500/10 transition disabled:opacity-50">
-                            {busy === a.id ? '…' : '✓ Complete'}
-                          </button>
+                          <div className="flex gap-2">
+                            {paused ? (
+                              <button onClick={() => resumeTask(a.id)} disabled={busy === a.id}
+                                className="text-xs px-3 py-2 rounded-lg border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 transition disabled:opacity-50">▶ Resume</button>
+                            ) : (
+                              <button onClick={() => pauseTask(a.id)} disabled={busy === a.id}
+                                className="text-xs px-3 py-2 rounded-lg border border-white/20 text-white/60 hover:text-white transition disabled:opacity-50">⏸ Pause</button>
+                            )}
+                            <button onClick={() => completeTask(a.id, a.tasks?.description || 'this task')} disabled={busy === a.id}
+                              className="text-xs px-4 py-2 rounded-lg border border-green-500/30 text-green-400 hover:bg-green-500/10 transition disabled:opacity-50">
+                              {busy === a.id ? '…' : '✓ Complete'}
+                            </button>
+                          </div>
                         </div>
-                      )}
+                        )
+                      })()}
                     </div>
                   ))}
                 </div>
@@ -217,6 +272,28 @@ export default function MyTasks() {
                   ))}
                 </div>
               )
+            )}
+
+            {student?.group_label && teamTasks.length > 0 && (
+              <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5 mt-6">
+                <p className="text-sm font-medium text-white mb-1">Team deadlines</p>
+                <p className="text-xs text-white/40 mb-4">Active tasks across your group ({student.group_label}), soonest first — plan around them.</p>
+                <div className="flex flex-col gap-2">
+                  {teamTasks.map((t, i) => {
+                    const overdue = t.due_date && t.due_date < new Date().toISOString().slice(0, 10)
+                    return (
+                      <div key={i} className="flex items-center gap-3 bg-white/5 rounded-lg p-2.5">
+                        <span className="text-xs text-white/70 w-28 truncate shrink-0">{t.name}</span>
+                        <span className="flex-1 text-sm text-white/80 truncate min-w-0">{t.description}</span>
+                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-white/10 text-white/45 shrink-0">{t.status === 'In Progress' ? 'Ongoing' : t.status}</span>
+                        <span className={`text-xs tabular-nums w-28 text-right shrink-0 ${overdue ? 'text-red-400' : 'text-white/50'}`}>
+                          {t.due_date ? `${overdue ? 'overdue · ' : 'due '}${t.due_date}` : 'no due date'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
             )}
           </>
         )}

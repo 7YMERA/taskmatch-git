@@ -452,6 +452,71 @@ def start(body: dict):
     return {"success": True, "in_progress_at": started_at}
 
 
+def _migration_needed():
+    raise HTTPException(status_code=400,
+                        detail="Pause needs a one-time database update (add accumulated_seconds and paused_at columns to assignments).")
+
+
+@app.post("/pause")
+def pause(body: dict):
+    """Pause a running task's timer: bank the current running segment into
+    accumulated_seconds and mark it paused. Time while paused doesn't count."""
+    assignment_id = body.get("assignment_id")
+    if not assignment_id:
+        raise HTTPException(status_code=400, detail="assignment_id required")
+    rows = supabase.table("assignments").select("*").eq("id", assignment_id).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    a = rows[0]
+    if a["status"] != "In Progress":
+        raise HTTPException(status_code=400, detail="Only a running task can be paused.")
+    if a.get("paused_at"):
+        raise HTTPException(status_code=400, detail="This task is already paused.")
+
+    started = a.get("in_progress_at")
+    seg = 0
+    if started:
+        start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+        seg = int(max((datetime.now(timezone.utc) - start_dt).total_seconds(), 0))
+    acc = int(a.get("accumulated_seconds") or 0) + seg
+    try:
+        supabase.table("assignments").update({"accumulated_seconds": acc, "paused_at": now_iso()}).eq("id", assignment_id).execute()
+    except Exception:
+        _migration_needed()
+
+    student = supabase.table("students").select("name").eq("id", a["student_id"]).execute().data
+    log_activity(action="assignment.paused", entity_type="assignment", entity_id=assignment_id,
+                 summary=f"{student[0]['name'] if student else a['student_id']} paused their timer",
+                 actor_email=body.get("actor_email"), actor_role=body.get("actor_role"),
+                 details={"task_id": a["task_id"], "accumulated_seconds": acc})
+    return {"success": True, "accumulated_seconds": acc}
+
+
+@app.post("/resume")
+def resume(body: dict):
+    """Resume a paused task: start a fresh running segment."""
+    assignment_id = body.get("assignment_id")
+    if not assignment_id:
+        raise HTTPException(status_code=400, detail="assignment_id required")
+    rows = supabase.table("assignments").select("*").eq("id", assignment_id).execute().data
+    if not rows:
+        raise HTTPException(status_code=404, detail="Assignment not found")
+    a = rows[0]
+    if not a.get("paused_at"):
+        raise HTTPException(status_code=400, detail="This task isn't paused.")
+    try:
+        supabase.table("assignments").update({"in_progress_at": now_iso(), "paused_at": None}).eq("id", assignment_id).execute()
+    except Exception:
+        _migration_needed()
+
+    student = supabase.table("students").select("name").eq("id", a["student_id"]).execute().data
+    log_activity(action="assignment.resumed", entity_type="assignment", entity_id=assignment_id,
+                 summary=f"{student[0]['name'] if student else a['student_id']} resumed their timer",
+                 actor_email=body.get("actor_email"), actor_role=body.get("actor_role"),
+                 details={"task_id": a["task_id"]})
+    return {"success": True}
+
+
 @app.post("/unassign")
 def unassign(body: dict):
     """Remove a student from a task (undo an assignment). Completed assignments are kept —
@@ -518,7 +583,7 @@ def complete(body: dict):
 
     rows = (
         supabase.table("assignments")
-        .select("id, task_id, student_id, in_progress_at")
+        .select("*")   # * so accumulated_seconds/paused_at read defensively (0/None if not migrated yet)
         .eq("id", assignment_id)
         .execute()
     ).data
@@ -529,12 +594,19 @@ def complete(body: dict):
 
     completed_at = datetime.now(timezone.utc)
 
-    # timed_hours = the real timer (start -> now); recorded whenever the task was started.
+    # timed_hours = the real timer, accounting for any paused time.
+    # total = accumulated_seconds (from finished running segments) + the current running segment
+    # (only if not currently paused). Falls back to plain start->now when pause isn't in use.
     started = assignment.get("in_progress_at")
+    acc_seconds = assignment.get("accumulated_seconds") or 0
+    paused = assignment.get("paused_at")
     timed_hours = None
-    if started:
-        start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
-        timed_hours = round(max((completed_at - start_dt).total_seconds() / 3600.0, 0.0), 3)
+    if started or acc_seconds:
+        seg = 0.0
+        if started and not paused:
+            start_dt = datetime.fromisoformat(started.replace("Z", "+00:00"))
+            seg = max((completed_at - start_dt).total_seconds(), 0.0)
+        timed_hours = round((acc_seconds + seg) / 3600.0, 3)
 
     # elapsed_hours = the SELF-DECLARED value (drives the score): manual if given, else the timer.
     if actual_hours is not None:
