@@ -123,7 +123,9 @@ export default function TaskDetail() {
     if (actual_hours !== undefined && (isNaN(actual_hours) || actual_hours < 0)) { toast('Enter a valid number.', 'error'); return }
     try {
       const res = await axios.post(`${API}/complete`, { assignment_id: assignmentId, actual_hours, actor_email: userEmail, actor_role: userRole })
-      toast(`Completed! Score: ${res.data.score ?? 'n/a'}`, 'success')
+      toast(res.data.score != null && res.data.committed_hours != null
+        ? `Completed! Score ${res.data.score} (${res.data.committed_hours}h committed vs ${res.data.elapsed_hours}h actual)`
+        : `Completed! Score: ${res.data.score ?? 'n/a'}`, 'success')
       await refresh()
     } catch (err: any) { toast(errMsg(err, 'Could not complete'), 'error') }
   }

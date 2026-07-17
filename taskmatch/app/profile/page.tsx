@@ -97,7 +97,9 @@ export default function Profile() {
         actor_email: userEmail,
         actor_role: userRole,
       })
-      toast(`Completed! Your performance score for this task: ${res.data.score ?? 'n/a'}`, 'success')
+      toast(res.data.score != null && res.data.committed_hours != null
+        ? `Completed! Score ${res.data.score} (${res.data.committed_hours}h committed vs ${res.data.elapsed_hours}h actual)`
+        : `Completed! Your score: ${res.data.score ?? 'n/a'}`, 'success')
       if (student) await loadTasks(student.id)
     } catch (err: any) {
       toast(err.response?.data?.detail || 'Failed to complete', 'error')
@@ -273,6 +275,14 @@ export default function Profile() {
                   <p className="text-[10px] text-white/30 mt-0.5 capitalize">{m.sub}</p>
                 </div>
               ))}
+            </div>
+
+            <div className="bg-[#1a1a1a] border border-white/10 rounded-xl px-4 py-3 mb-6 flex items-start gap-2">
+              <span className="text-white/30 text-xs mt-0.5">ⓘ</span>
+              <p className="text-xs text-white/40">
+                <span className="text-white/60">How your score works:</span> score = committed hours ÷ (committed + actual hours), between 0 and 1.
+                Finishing in less time than budgeted scores higher. Bands: <span className="text-emerald-400">High ≥ 0.6</span> · <span className="text-amber-400">Avg ≥ 0.4</span> · <span className="text-red-400">Low &lt; 0.4</span>.
+              </p>
             </div>
 
             <div className="grid grid-cols-2 gap-6">

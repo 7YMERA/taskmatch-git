@@ -3,12 +3,15 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
+import axios from 'axios'
 import Link from 'next/link'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
+
+const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
 
 // Shared left navigation. "My Profile" lives at the bottom with the user's photo.
 export default function Sidebar() {
@@ -17,6 +20,9 @@ export default function Sidebar() {
   const [role, setRole] = useState('')
   const [name, setName] = useState('')
   const [avatar, setAvatar] = useState<string | null>(null)
+
+  // Wake the free-tier API on load so the user's first action doesn't hit a cold start.
+  useEffect(() => { axios.get(`${API}/health`, { timeout: 60000 }).catch(() => {}) }, [])
 
   useEffect(() => {
     supabase.auth.getSession().then(async ({ data: { session } }) => {

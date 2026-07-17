@@ -80,6 +80,14 @@ def require_admin_client():
 
 WIP_LIMIT = 3
 
+
+@app.get("/health")
+def health():
+    """Cheap, DB-free liveness check. The frontend pings this on load to wake the
+    free-tier server before the user acts (avoids the cold-start error where a write
+    lands but the proxy times out the response)."""
+    return {"ok": True}
+
 # Performance-score bands (higher = better; score in 0..1)
 def score_band(avg_score, completed_count):
     """Map an average score to a band. Unrated students (no completed
@@ -603,8 +611,8 @@ def complete(body: dict):
                  "task_completed": bool(all_done), "late": late, "due_date": due_date},
     )
 
-    return {"success": True, "score": score, "elapsed_hours": round(elapsed_hours, 2), "late": late,
-            "task_completed": bool(all_done)}
+    return {"success": True, "score": score, "elapsed_hours": round(elapsed_hours, 2),
+            "committed_hours": committed, "late": late, "task_completed": bool(all_done)}
 
 
 @app.get("/student-stats")

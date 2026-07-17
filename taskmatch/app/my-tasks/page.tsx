@@ -94,7 +94,9 @@ export default function MyTasks() {
     setBusy(assignmentId)
     try {
       const res = await axios.post(`${API}/complete`, { assignment_id: assignmentId, actual_hours, actor_email: userEmail, actor_role: userRole })
-      toast(`Completed!${userRole === 'leader' && res.data.score != null ? ` Score: ${res.data.score}` : ''}`, 'success')
+      const d = res.data
+      const basis = d.score != null && d.committed_hours != null ? ` — score ${d.score} (${d.committed_hours}h committed vs ${d.elapsed_hours}h actual)` : (d.score != null ? ` — score ${d.score}` : '')
+      toast(`Completed!${userRole === 'leader' ? basis : ''}`, 'success')
       if (student) await load(student.id)
     } catch (err: any) { toast(errMsg(err, 'Could not complete'), 'error') }
     finally { setBusy(null) }
