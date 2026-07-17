@@ -353,8 +353,8 @@ export default function Dashboard() {
           </div>
 
           <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
-            <p className="text-sm font-medium text-white mb-1">Team performance</p>
-            <p className="text-xs text-white/40 mb-4">Average individual score (efficiency vs committed hours)</p>
+            <p className="text-sm font-medium text-white mb-1">Individual performance</p>
+            <p className="text-xs text-white/40 mb-4">Each student's average score (efficiency vs committed hours)</p>
             {loading ? (
               <p className="text-white/40 text-sm">Loading...</p>
             ) : statsList.length === 0 ? (

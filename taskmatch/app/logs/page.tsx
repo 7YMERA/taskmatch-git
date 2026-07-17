@@ -17,6 +17,7 @@ export default function Logs() {
   const [userRole, setUserRole] = useState('')
   const [logs, setLogs] = useState<any[]>([])
   const [filter, setFilter] = useState('all')
+  const [search, setSearch] = useState('')
   const [loading, setLoading] = useState(true)
   const [ready, setReady] = useState(false)
 
@@ -47,7 +48,14 @@ export default function Logs() {
     return 'bg-white/10 text-white/50'
   }
 
-  const shown = filter === 'all' ? logs : logs.filter(l => l.entity_type === filter)
+  // Filter by entity type + free-text search across actor, action, summary and details.
+  const q = search.trim().toLowerCase()
+  const shown = logs.filter(l => {
+    if (filter !== 'all' && l.entity_type !== filter) return false
+    if (!q) return true
+    return [l.actor_email, l.action, l.summary, l.entity_type, l.details && JSON.stringify(l.details)]
+      .some(v => (v || '').toString().toLowerCase().includes(q))
+  })
   const entityTypes = Array.from(new Set(logs.map(l => l.entity_type).filter(Boolean))).sort()
   const filters = ['all', ...entityTypes]
   const countFor = (f: string) => f === 'all' ? logs.length : logs.filter(l => l.entity_type === f).length
@@ -74,7 +82,24 @@ export default function Logs() {
           </div>
         ) : (
           <>
-            <div className="flex gap-2 mb-4 flex-wrap">
+            <div className="relative mb-4 max-w-md">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"
+                className="w-4 h-4 text-white/30 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none">
+                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+              </svg>
+              <input
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search by person, action, or anything…"
+                className="w-full bg-white/5 border border-white/10 rounded-lg pl-9 pr-9 py-2.5 text-sm text-white placeholder-white/25 outline-none focus:border-indigo-500 transition"
+              />
+              {search && (
+                <button onClick={() => setSearch('')} aria-label="Clear search"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-white/30 hover:text-white text-sm">✕</button>
+              )}
+            </div>
+
+            <div className="flex gap-2 mb-4 flex-wrap items-center">
               {filters.map(f => (
                 <button key={f} onClick={() => setFilter(f)}
                   className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border capitalize transition ${filter === f
@@ -89,7 +114,7 @@ export default function Logs() {
             {loading ? (
               <p className="text-white/40 text-sm">Loading...</p>
             ) : shown.length === 0 ? (
-              <p className="text-white/40 text-sm">No activity recorded yet.</p>
+              <p className="text-white/40 text-sm">{q || filter !== 'all' ? 'No matching activity.' : 'No activity recorded yet.'}</p>
             ) : (
               <div className="bg-[#1a1a1a] border border-white/10 rounded-xl overflow-hidden">
                 <table className="w-full text-sm">

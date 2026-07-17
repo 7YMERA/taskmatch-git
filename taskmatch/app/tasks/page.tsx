@@ -251,8 +251,11 @@ const updateTaskStatus = async (id: string, status: string) => {
       <main className="flex-1 p-8">
         <div className="flex items-center justify-between mb-6">
           <div>
+            {statusFilter !== 'all' && (
+              <Link href="/dashboard" className="inline-flex items-center gap-1 text-xs text-white/40 hover:text-white transition mb-1">← Back to dashboard</Link>
+            )}
             <h1 className="text-2xl font-semibold text-white">Tasks</h1>
-            <p className="text-xs text-white/40 mt-1">Click a task to see recommendations</p>
+            <p className="text-xs text-white/40 mt-1">Click a task to see recommendations{statusFilter !== 'all' ? ` · filtered: ${statusFilter}` : ''}</p>
           </div>
           {userRole === 'leader' && (
             <div className="flex gap-2">
