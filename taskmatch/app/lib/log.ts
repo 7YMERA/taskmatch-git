@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { effectiveRole } from './role'
 
 // Dedicated client for writing audit entries. activity_logs has RLS that
 // allows INSERT + SELECT but denies UPDATE/DELETE, so rows are append-only.
@@ -30,7 +31,7 @@ export async function logActivity(entry: LogEntry) {
       summary: entry.summary ?? null,
       details: entry.details ?? null,
       actor_email: session?.user?.email ?? null,
-      actor_role: session?.user?.user_metadata?.role ?? null,
+      actor_role: session ? effectiveRole(session) : null,
     })
   } catch {
     /* swallow — auditing must not break the underlying action */

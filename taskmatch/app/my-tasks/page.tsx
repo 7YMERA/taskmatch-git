@@ -7,6 +7,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
 import { toast } from '../lib/ui'
+import { effectiveRole } from '../lib/role'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -58,7 +59,7 @@ export default function MyTasks() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
     setUserEmail(session.user.email || '')
-    setUserRole(session.user.user_metadata?.role || 'student')
+    setUserRole(effectiveRole(session))
     const { data: s } = await supabase.from('students').select('*').eq('email', session.user.email).maybeSingle()
     if (!s) { setNotFound(true); setLoading(false); return }
     setStudent(s)

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 import axios from 'axios'
 import Link from 'next/link'
+import { effectiveRole, setRoleOverride } from '../lib/role'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,7 +30,7 @@ export default function Sidebar() {
       if (!session) return
       const e = session.user.email || ''
       setEmail(e)
-      setRole(session.user.user_metadata?.role || 'student')
+      setRole(effectiveRole(session))
       const { data } = await supabase.from('students').select('name, avatar_url').eq('email', e).maybeSingle()
       if (data) { setName(data.name || ''); setAvatar(data.avatar_url || null) }
     })
@@ -94,7 +95,21 @@ export default function Sidebar() {
             {role || 'student'}
           </span>
         </div>
-        <button onClick={async () => { await supabase.auth.signOut(); router.push('/login') }}
+
+        {/* Testing helper — view the app as either role without switching accounts. */}
+        <div className="px-3 mt-2">
+          <p className="text-[10px] text-white/25 mb-1">Testing — view as</p>
+          <div className="flex gap-1">
+            {['leader', 'student'].map(r => (
+              <button key={r} onClick={() => { setRoleOverride(r); window.location.reload() }}
+                className={`flex-1 text-[11px] py-1 rounded border capitalize transition ${role === r ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-white/10 text-white/40 hover:text-white'}`}>
+                {r}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <button onClick={async () => { setRoleOverride(null); await supabase.auth.signOut(); router.push('/login') }}
           className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-red-400/60 hover:text-red-400 hover:bg-red-500/10 transition mt-2">
           Sign out
         </button>

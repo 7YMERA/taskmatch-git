@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import axios from 'axios'
 import Link from 'next/link'
 import Sidebar from '../../components/Sidebar'
+import { effectiveRole } from '../../lib/role'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -29,7 +30,7 @@ export default function StudentDetail() {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.push('/login'); return }
       setUserEmail(session.user.email || '')
-      setUserRole(session.user.user_metadata?.role || 'student')
+      setUserRole(effectiveRole(session))
     })
     loadAll()
   }, [id])

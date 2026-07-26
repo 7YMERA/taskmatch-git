@@ -8,6 +8,7 @@ import Link from 'next/link'
 import { logActivity } from '../lib/log'
 import Sidebar from '../components/Sidebar'
 import SkillPicker from '../components/SkillPicker'
+import { effectiveRole } from '../lib/role'
 import { toast, confirmDialog } from '../lib/ui'
 
 const supabase = createClient(
@@ -39,7 +40,7 @@ export default function Profile() {
     const { data: { session } } = await supabase.auth.getSession()
     if (!session) { router.push('/login'); return }
     setUserEmail(session.user.email || '')
-    setUserRole(session.user.user_metadata?.role || 'student')
+    setUserRole(effectiveRole(session))
 
     const { data: skillData } = await supabase.from('skills').select('*')
     setSkills(skillData || [])
