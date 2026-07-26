@@ -27,6 +27,7 @@ export default function Dashboard() {
   const [wipData, setWipData] = useState<any>({ wip_limit: 3, at_limit: 0, working: 0, students: [] })
   const [loading, setLoading] = useState(true)
   const [roleReady, setRoleReady] = useState(false)
+  const [tab, setTab] = useState<'overview' | 'workload' | 'performance'>('overview')
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
@@ -196,6 +197,17 @@ export default function Dashboard() {
           <p className="text-white/40 text-sm">Loading…</p>
         ) : isLeader ? (
         <>
+        {/* Section tabs — click to page between sections instead of scrolling */}
+        <div className="flex gap-2 mb-6">
+          {([['overview', 'Overview'], ['workload', 'Workload'], ['performance', 'Performance']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setTab(k)}
+              className={`text-sm px-4 py-2 rounded-lg border transition ${tab === k ? 'border-indigo-500 bg-indigo-500/20 text-indigo-300' : 'border-white/10 text-white/50 hover:text-white hover:border-white/25'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+
+        {tab === 'overview' && (<>
         {/* KPI cards */}
         <div className="grid grid-cols-4 gap-4 mb-4">
           {[
@@ -267,7 +279,9 @@ export default function Dashboard() {
               )}
           </div>
         </div>
+        </>)}
 
+        {tab === 'workload' && (<>
         {/* Task severity mix */}
         <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5 mb-6">
           <p className="text-sm font-medium text-white mb-1">Task severity</p>
@@ -309,7 +323,9 @@ export default function Dashboard() {
             <p className="text-[11px] text-red-400/70 mt-3">⚠ {wipData.at_limit} student{wipData.at_limit === 1 ? '' : 's'} at the WIP limit — they can&apos;t take new tasks until they finish something.</p>
           )}
         </div>
+        </>)}
 
+        {tab === 'performance' && (<>
         {/* Fastest / slowest task */}
         <div className="grid grid-cols-2 gap-6 mb-6">
           {[
@@ -382,6 +398,7 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        </>)}
         </>
         ) : (
           <>
