@@ -6,6 +6,7 @@ import { createClient } from '@supabase/supabase-js'
 import axios from 'axios'
 import Link from 'next/link'
 import Sidebar from '../components/Sidebar'
+import Donut from '../components/Donut'
 import { effectiveRole } from '../lib/role'
 
 const API = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
@@ -25,18 +26,20 @@ export default function Dashboard() {
   const [assignments, setAssignments] = useState<any[]>([])
   const [wipData, setWipData] = useState<any>({ wip_limit: 3, at_limit: 0, working: 0, students: [] })
   const [loading, setLoading] = useState(true)
+  const [roleReady, setRoleReady] = useState(false)
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (!session) { router.push('/login'); return }
       setUserEmail(session.user.email || '')
       setUserRole(effectiveRole(session))
+      setRoleReady(true)
     })
     loadDashboard()
   }, [])
 
   const loadDashboard = async () => {
-    const { data: studentRows } = await supabase.from('students').select('id, name, programme')
+    const { data: studentRows } = await supabase.from('students').select('id, name, programme, email')
     const { data: taskRows } = await supabase.from('tasks').select('id, description, status, severity, due_date, committed_hours, completed_at')
     const { data: assignmentRows } = await supabase.from('assignments').select('task_id, student_id, status, score, actual_hours, completed_at')
     setStudents(studentRows || [])
@@ -157,13 +160,42 @@ export default function Dashboard() {
   const wipLoaded = (wipData.students || []).filter((s: any) => s.wip > 0)
   const wipColor = (w: number) => w >= wipLimit ? '#ef4444' : w >= wipLimit - 1 ? '#f59e0b' : '#10b981'
 
+  // Task severity mix (leader visual).
+  const SEV = [
+    { label: 'Critical', color: '#ef4444' },
+    { label: 'Medium', color: '#f59e0b' },
+    { label: 'Low', color: '#6b7280' },
+  ]
+  const severityData = SEV.map(s => ({ ...s, value: tasks.filter(t => (t.severity || 'Medium') === s.label).length })).filter(s => s.value > 0)
+
+  const isLeader = userRole === 'leader'
+
+  // ── Student view: my own snapshot (no other students' scores) ──
+  const me = students.find(s => (s.email || '').toLowerCase() === userEmail.toLowerCase())
+  const myAssignments = me ? assignments.filter(a => a.student_id === me.id) : []
+  const myActive = myAssignments.filter(a => a.status === 'Assigned' || a.status === 'In Progress').length
+  const myDone = myAssignments.filter(a => a.status === 'Completed')
+  const myScored = myDone.filter(a => a.score != null)
+  const myAvgScore = myScored.length ? (myScored.reduce((s, a) => s + a.score, 0) / myScored.length).toFixed(2) : '—'
+  const myOnTime = myDone.filter(a => { const t = taskMap[a.task_id]; return a.completed_at && t?.due_date && a.completed_at.slice(0, 10) <= t.due_date }).length
+  const myOnTimeRate = myDone.length ? Math.round((myOnTime / myDone.length) * 100) : null
+  const myStatusData = [
+    { label: 'To do', color: '#eab308', value: myAssignments.filter(a => a.status === 'Assigned').length },
+    { label: 'In progress', color: '#22c55e', value: myAssignments.filter(a => a.status === 'In Progress').length },
+    { label: 'Completed', color: '#3b82f6', value: myDone.length },
+  ].filter(x => x.value > 0)
+
   return (
     <div className="flex min-h-screen">
       <Sidebar />
 
       <main className="flex-1 p-8 overflow-y-auto">
-        <h1 className="text-2xl font-semibold text-white mb-6">Dashboard</h1>
+        <h1 className="text-2xl font-semibold text-white mb-6">{isLeader ? 'Dashboard' : 'My Dashboard'}</h1>
 
+        {!roleReady ? (
+          <p className="text-white/40 text-sm">Loading…</p>
+        ) : isLeader ? (
+        <>
         {/* KPI cards */}
         <div className="grid grid-cols-4 gap-4 mb-4">
           {[
@@ -211,45 +243,7 @@ export default function Dashboard() {
             <p className="text-sm font-medium text-white mb-1">Task lifecycle</p>
             <p className="text-xs text-white/40 mb-3">Where the {tasks.length} task{tasks.length === 1 ? '' : 's'} stand right now</p>
             {loading ? <p className="text-white/40 text-sm">Loading…</p>
-              : lifecycleTotal === 0 ? <p className="text-white/40 text-sm">No tasks yet.</p>
-              : (
-                <div className="flex items-center gap-6">
-                  <div className="relative w-40 h-40 shrink-0">
-                    <svg viewBox="0 0 140 140" className="w-40 h-40 -rotate-90">
-                      <circle cx="70" cy="70" r="54" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="20" />
-                      {(() => {
-                        const C = 2 * Math.PI * 54
-                        let offset = 0
-                        return lifecycle.map(s => {
-                          const len = (s.value / lifecycleTotal) * C
-                          const seg = (
-                            <circle key={s.label} cx="70" cy="70" r="54" fill="none" stroke={s.color} strokeWidth="20"
-                              strokeDasharray={`${len} ${C - len}`} strokeDashoffset={-offset} strokeLinecap="butt">
-                              <title>{`${s.label}: ${s.value} (${Math.round((s.value / lifecycleTotal) * 100)}%)`}</title>
-                            </circle>
-                          )
-                          offset += len
-                          return seg
-                        })
-                      })()}
-                    </svg>
-                    <div className="absolute inset-0 flex flex-col items-center justify-center">
-                      <span className="text-2xl font-semibold text-white leading-none">{lifecycleTotal}</span>
-                      <span className="text-[10px] text-white/40 mt-1">tasks</span>
-                    </div>
-                  </div>
-                  <div className="flex-1 flex flex-col gap-1.5">
-                    {lifecycle.map(s => (
-                      <div key={s.label} className="flex items-center gap-2 text-xs">
-                        <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
-                        <span className="text-white/70 flex-1">{s.label}</span>
-                        <span className="text-white/50 tabular-nums">{s.value}</span>
-                        <span className="text-white/30 tabular-nums w-9 text-right">{Math.round((s.value / lifecycleTotal) * 100)}%</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+              : <Donut data={lifecycle} centerLabel="tasks" />}
           </div>
 
           <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
@@ -272,6 +266,15 @@ export default function Dashboard() {
                 </div>
               )}
           </div>
+        </div>
+
+        {/* Task severity mix */}
+        <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5 mb-6">
+          <p className="text-sm font-medium text-white mb-1">Task severity</p>
+          <p className="text-xs text-white/40 mb-3">How the {tasks.length} task{tasks.length === 1 ? '' : 's'} break down by priority</p>
+          {loading ? <p className="text-white/40 text-sm">Loading…</p>
+            : severityData.length === 0 ? <p className="text-white/40 text-sm">No tasks yet.</p>
+            : <Donut data={severityData} centerLabel="tasks" />}
         </div>
 
         {/* Work in progress (WIP) tracker */}
@@ -379,6 +382,55 @@ export default function Dashboard() {
             )}
           </div>
         </div>
+        </>
+        ) : (
+          <>
+            {/* Student personal snapshot — no other students' scores */}
+            <div className="grid grid-cols-4 gap-4 mb-6">
+              {[
+                { label: 'My active tasks', value: `${myActive}`, sub: `of ${wipLimit} WIP limit`, color: myActive >= wipLimit ? 'text-red-400' : 'text-white' },
+                { label: 'Completed', value: `${myDone.length}`, sub: 'tasks done', color: 'text-blue-400' },
+                { label: 'My avg score', value: `${myAvgScore}`, sub: myScored.length ? `${myScored.length} scored` : 'none yet', color: 'text-white' },
+                { label: 'On time', value: myOnTimeRate == null ? '—' : `${myOnTimeRate}%`, sub: `${myOnTime}/${myDone.length} completed`, color: (myOnTimeRate ?? 100) >= 80 ? 'text-emerald-400' : 'text-amber-400' },
+              ].map(m => (
+                <div key={m.label} className="bg-[#1a1a1a] border border-white/10 rounded-xl p-4">
+                  <p className="text-xs text-white/40 mb-1">{m.label}</p>
+                  <p className={`text-2xl font-semibold ${m.color}`}>{loading ? '…' : m.value}</p>
+                  <p className="text-xs text-white/30 mt-1">{m.sub}</p>
+                </div>
+              ))}
+            </div>
+
+            {!me && !loading ? (
+              <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-6 mb-6 max-w-lg">
+                <p className="text-sm text-white mb-1">No student record linked to your account.</p>
+                <p className="text-xs text-white/40">Ask your leader to add you on the Students page using {userEmail}, then refresh.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-2 gap-6 mb-6">
+                <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
+                  <p className="text-sm font-medium text-white mb-1">My tasks</p>
+                  <p className="text-xs text-white/40 mb-3">Your work across all states</p>
+                  {loading ? <p className="text-white/40 text-sm">Loading…</p>
+                    : myStatusData.length === 0 ? <p className="text-white/40 text-sm">Nothing assigned yet — see “Suggested for you” on your profile.</p>
+                    : <Donut data={myStatusData} centerLabel="my tasks" />}
+                </div>
+                <div className="bg-[#1a1a1a] border border-white/10 rounded-xl p-5">
+                  <p className="text-sm font-medium text-white mb-1">Project progress</p>
+                  <p className="text-xs text-white/40 mb-3">Where all {tasks.length} tasks stand</p>
+                  {loading ? <p className="text-white/40 text-sm">Loading…</p>
+                    : lifecycleTotal === 0 ? <p className="text-white/40 text-sm">No tasks yet.</p>
+                    : <Donut data={lifecycle} centerLabel="tasks" />}
+                </div>
+              </div>
+            )}
+
+            <div className="flex gap-3">
+              <Link href="/my-tasks" className="text-sm px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg transition">Go to My Tasks →</Link>
+              <Link href="/profile" className="text-sm px-4 py-2 border border-white/15 text-white/70 hover:text-white rounded-lg transition">See suggested tasks</Link>
+            </div>
+          </>
+        )}
       </main>
     </div>
   )
